@@ -83,11 +83,27 @@ controller button.
 The screen also shows how much data is cached, lets you download the current area on demand, clear
 the cache, and preview what an alert looks like.
 
+## Verification map
+
+`tools/verify-map.html` is a standalone page for checking the data and the logic on a map before
+trusting it on the road. Open it in any browser — no build step, no server.
+
+* Pans to an area and downloads the same Overpass query the extension uses.
+* Draws every town-entry sign with an arrow for the direction that counts as riding in, marks signs
+  with no known direction in orange, and greys out nodes that were dropped for carrying only the
+  crossed-out sign. Clicking a sign shows its OSM tags and which place node it was matched to.
+* Lets you draw a route and run it in both directions, placing a bell where an alert would fire —
+  so "town announced riding in, silence riding out" is something you can see.
+
+The page carries its own copy of the decision logic; `node tools/verify-map-parity.mjs` checks it
+against the same fixtures the Kotlin tests use, and CI runs that check on every push.
+
 ## Project layout
 
 ```
 core/   Pure Kotlin: geometry, sign classification, Overpass query/parsing, approach detection
 app/    Android app: the Karoo extension service, sign cache/downloader and the settings screen
+tools/  Standalone verification map and its parity check
 ```
 
 All of the decision logic lives in `core/` and is covered by unit tests, including a simulated ride
