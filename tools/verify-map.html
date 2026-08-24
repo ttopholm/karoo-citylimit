@@ -96,7 +96,7 @@
       <div>Skilte i brug: <b id="stat-kept">0</b></div>
       <div>Heraf uden kendt retning: <b id="stat-unknown">0</b></div>
       <div>Kasseret (kun streg over): <b id="stat-dropped">0</b></div>
-      <div>Bynoder til retningsbestemmelse: <b id="stat-places">0</b></div>
+      <div>Byer til retningsbestemmelse: <b id="stat-places">0</b> (heraf <b id="stat-areas">0</b> arealer)</div>
     </div>
 
     <h2>Signaturforklaring</h2>
@@ -105,6 +105,7 @@
       <div><span class="dot unknown"></span> Byskilt uden kendt retning</div>
       <div><span class="dot dropped"></span> Kasseret: kun skilt med streg over</div>
       <div><span class="dot place"></span> Bynode brugt til retningen</div>
+      <div><span class="dot place" style="background:#fff"></span> Midte af byareal (by uden bynode)</div>
       <div><span class="alert-icon">🔔</span> Her ville alarmen lyde</div>
     </div>
 
@@ -212,6 +213,11 @@
     return { entry: entry, exit: exit, directional: directional };
   }
 
+  /*
+   * Byen et skilt hører til: den by skiltet navngiver, hvis navnet er mappet i nærheden, ellers den
+   * nærmeste by. En mappet bynode vinder over midten af et byareal, fordi noden ligger i bymidten,
+   * mens arealets centrum kun er midten af dets omsluttende rektangel.
+   */
   function matchPlace(position, signName, places) {
     var normalized = (signName || '').trim().toLowerCase();
     if (normalized) {
@@ -223,9 +229,15 @@
         return nearestNamed;
       }
     }
-    var nearestAny = nearest(position, places);
-    if (nearestAny && distance(position, nearestAny.position) <= MAX_NEAREST_PLACE_DISTANCE_METERS) {
-      return nearestAny;
+    var nodes = places.filter(function (place) { return !place.isArea; });
+    var areas = places.filter(function (place) { return place.isArea; });
+    return nearestWithin(position, nodes) || nearestWithin(position, areas);
+  }
+
+  function nearestWithin(position, places) {
+    var candidate = nearest(position, places);
+    if (candidate && distance(position, candidate.position) <= MAX_NEAREST_PLACE_DISTANCE_METERS) {
+      return candidate;
     }
     return null;
   }
@@ -251,22 +263,30 @@
    */
   function parseResponse(body) {
     var elements = (typeof body === 'string' ? JSON.parse(body) : body).elements || [];
+    var positionOf = function (element) {
+      var lat = element.lat != null ? element.lat : (element.center ? element.center.lat : null);
+      var lon = element.lon != null ? element.lon : (element.center ? element.center.lon : null);
+      return (lat == null || lon == null) ? null : { lat: lat, lng: lon };
+    };
+
     var places = [];
     elements.forEach(function (element) {
       var tags = element.tags || {};
-      if (!tags.place || element.lat == null || element.lon == null) return;
+      var position = positionOf(element);
+      if (!tags.place || !position) return;
       places.push({
         id: element.id,
-        position: { lat: element.lat, lng: element.lon },
+        position: position,
         name: tags.name || null,
-        kind: tags.place
+        kind: tags.place,
+        isArea: element.type !== 'node'
       });
     });
 
     var signs = [], dropped = [];
     elements.forEach(function (element) {
       var tags = element.tags || {};
-      if (element.lat == null || element.lon == null) return;
+      if (element.type !== 'node' || element.lat == null || element.lon == null) return;
       var sides = classify(tags);
       if (!sides.entry && !sides.exit) return;
       var position = { lat: element.lat, lng: element.lon };
@@ -363,8 +383,10 @@
       '(\n' +
       '  node(' + box + ')[~"^traffic_sign(:(forward|backward|both))?$"~"' + OVERPASS_VALUE_REGEX + '",i];\n' +
       '  node(' + box + ')["place"~"' + PLACE_REGEX + '"];\n' +
+      '  way(' + box + ')["place"~"' + PLACE_REGEX + '"];\n' +
+      '  relation(' + box + ')["place"~"' + PLACE_REGEX + '"];\n' +
       ');\n' +
-      'out body qt;';
+      'out center qt;';
   }
 
   root.CityLimit = {
@@ -443,8 +465,10 @@
     });
   }
 
-  function osmLink(id) {
-    return '<a href="https://www.openstreetmap.org/node/' + id + '" target="_blank" rel="noreferrer">node/' + id + '</a>';
+  function osmLink(id, type) {
+    var kind = type || 'node';
+    return '<a href="https://www.openstreetmap.org/' + kind + '/' + id + '" target="_blank" rel="noreferrer">' +
+      kind + '/' + id + '</a>';
   }
 
   function render() {
@@ -452,9 +476,11 @@
 
     data.places.forEach(function (place) {
       L.circleMarker([place.position.lat, place.position.lng], {
-        radius: 4, color: '#1565c0', weight: 2, fillColor: '#1565c0', fillOpacity: .7
+        radius: 4, color: '#1565c0', weight: 2,
+        fillColor: place.isArea ? '#ffffff' : '#1565c0', fillOpacity: place.isArea ? .9 : .7
       }).bindPopup('<b>' + escapeHtml(place.name || '(uden navn)') + '</b><br>place=' + escapeHtml(place.kind) +
-        '<br>' + osmLink(place.id)).addTo(signLayer);
+        (place.isArea ? '<br>Midte af byareal (ingen bynode)' : '') +
+        '<br>' + osmLink(place.id, place.isArea ? 'way' : 'node')).addTo(signLayer);
     });
 
     data.signs.forEach(function (sign) {
@@ -468,7 +494,8 @@
           ? 'Retning ind i byen: ' + Math.round(sign.entryHeading) + '°'
           : '<span style="color:#b71c1c">Ukendt retning – ingen bynode fundet</span>') +
         (sign.place ? '<br>Matchet by: ' + escapeHtml(sign.place.name || '(uden navn)') +
-          ' (' + Math.round(C.distance(sign.position, sign.place.position)) + ' m)' : '') +
+          ' (' + Math.round(C.distance(sign.position, sign.place.position)) + ' m' +
+          (sign.place.isArea ? ', arealmidte' : '') + ')' : '') +
         (sign.genericBoundary ? '<br><span class="muted">Generisk byzonenode (indkørsel den ene vej, ophør den anden)</span>' : '') +
         '<br>' + osmLink(sign.id) + tagTable(sign.tags)
       ).addTo(signLayer);
@@ -505,6 +532,7 @@
     element('stat-unknown').textContent = unknown;
     element('stat-dropped').textContent = data.dropped.length;
     element('stat-places').textContent = data.places.length;
+    element('stat-areas').textContent = data.places.filter(function (place) { return place.isArea; }).length;
   }
 
   element('load').addEventListener('click', function () {

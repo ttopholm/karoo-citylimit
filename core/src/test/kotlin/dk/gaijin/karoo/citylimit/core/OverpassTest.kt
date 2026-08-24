@@ -82,12 +82,65 @@ class OverpassTest {
     }
 
     @Test
-    fun `query contains the bounding box and both node filters`() {
+    fun `query contains the bounding box and every filter`() {
         val query = Overpass.query(BoundingBox(55.85, 12.25, 55.90, 12.35))
         assertTrue(query.contains("55.850000,12.250000,55.900000,12.350000"))
         assertTrue(query.contains("traffic_sign"))
-        assertTrue(query.contains("place"))
         assertTrue(query.contains("[out:json]"))
+        // Places are collected as nodes, ways and relations so towns mapped only as an area count.
+        assertTrue(query.contains("""node(55.850000,12.250000,55.900000,12.350000)["place"~"""".trimMargin()))
+        assertTrue(query.contains("""way(55.850000,12.250000,55.900000,12.350000)["place"~"""".trimMargin()))
+        assertTrue(query.contains("""relation(55.850000,12.250000,55.900000,12.350000)["place"~"""".trimMargin()))
+        assertTrue(query.contains("out center qt;"))
+    }
+
+    @Test
+    fun `a town mapped only as an area still gives a direction`() {
+        val body = """
+            {"elements":[
+              {"type":"node","id":1,"lat":55.9100000,"lon":12.2800000,
+               "tags":{"traffic_sign":"city_limit","name":"Arealby"}},
+              {"type":"way","id":500,"center":{"lat":55.9000000,"lon":12.2800000},
+               "tags":{"name":"Arealby","place":"village"}}
+            ]}
+        """.trimIndent()
+        val sign = Overpass.parseSigns(body).single()
+        // The area centre lies due south of the sign, so riding in means riding south.
+        assertEquals(180.0, sign.entryHeading!!, 2.0)
+        assertEquals(500L, sign.townId)
+        assertEquals("Arealby", sign.name)
+    }
+
+    @Test
+    fun `an area tagged as a sign is not treated as a sign`() {
+        val body = """
+            {"elements":[
+              {"type":"way","id":600,"center":{"lat":55.90,"lon":12.28},
+               "tags":{"traffic_sign":"city_limit","name":"Vejby"}}
+            ]}
+        """.trimIndent()
+        assertTrue(Overpass.parseSigns(body).isEmpty())
+    }
+
+    @Test
+    fun `a mapped node beats an area centre for an unnamed sign`() {
+        val signPosition = LatLng(55.9000000, 12.2800000)
+        val places = listOf(
+            PlaceNode(1, LatLng(55.8960000, 12.2800000), "Nodeby", "village", isArea = false),
+            PlaceNode(2, LatLng(55.8990000, 12.2800000), "Arealby", "suburb", isArea = true),
+        )
+        // The area centre is closer, but a node sits at the real town centre.
+        assertEquals(1L, Overpass.matchPlace(signPosition, null, places)?.id)
+    }
+
+    @Test
+    fun `an area with the right name beats an unrelated node`() {
+        val signPosition = LatLng(55.9000000, 12.2800000)
+        val places = listOf(
+            PlaceNode(1, LatLng(55.8980000, 12.2800000), "Nabolandsby", "village", isArea = false),
+            PlaceNode(2, LatLng(55.8950000, 12.2800000), "Skiltby", "town", isArea = true),
+        )
+        assertEquals(2L, Overpass.matchPlace(signPosition, "Skiltby", places)?.id)
     }
 
     @Test

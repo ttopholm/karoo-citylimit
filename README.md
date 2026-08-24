@@ -24,10 +24,12 @@ Town boundaries come from OpenStreetMap. Two things have to be true before you g
    `DE:311`, `SE:E6`, `city_limit=end`, … — are dropped while parsing. In Denmark most boundaries
    are mapped as a single `traffic_sign=city_limit` node that is an entry sign in one direction and
    an exit sign in the other, so a second check is needed.
-2. **You are riding into the town, not out of it.** Each sign is matched to the `place` node of its
-   town (by name when the sign carries one, otherwise the nearest place). The bearing from the sign
-   towards the town centre is the direction a rider enters in, and your heading has to be within
-   80° of it. Riding out of town points the other way, so no alert is raised.
+2. **You are riding into the town, not out of it.** Each sign is matched to the `place` of its town
+   — by name when the sign carries one, otherwise the nearest place. Towns mapped only as an area
+   count too: the centre of the area is used when no `place` node exists, and a mapped node wins
+   over an area centre for a sign with no name. The bearing from the sign towards the town centre is
+   the direction a rider enters in, and your heading has to be within 80° of it. Riding out of town
+   points the other way, so no alert is raised.
 
 On top of that the sign has to lie ahead of you (within 55° of your heading) and inside the alert
 distance, and each town is only announced once per ten minutes.
@@ -39,7 +41,9 @@ alerts than miss a town.
 ## Sign data
 
 Data is queried from the [Overpass API](https://overpass-api.de/) in grid cells of roughly 5 × 6 km
-and cached on the device for 90 days, so a route you ride often needs no connection at all.
+and cached on the device for 90 days. Each query returns the sign nodes plus the places used for
+direction, the latter as nodes, ways and relations with `out center` so an area's centre comes back
+without its full geometry. The cache means a route you ride often needs no connection at all.
 Requests go through the Karoo system's HTTP API, which uses Wi-Fi when available and otherwise the
 companion phone over Bluetooth. Downloads are spaced at least 4 seconds apart and back off on
 errors.
@@ -126,9 +130,11 @@ config in `app/build.gradle.kts` if you need a different one.
 
 ## Limitations
 
-* Alerts depend on how well town boundaries are mapped in OpenStreetMap. Places mapped only as an
-  area (without a `place` node) do not give a direction, so their signs fall into the "unknown
-  direction" group.
+* Alerts depend on how well town boundaries are mapped in OpenStreetMap. A sampling of one ~11 × 13
+  km area per country found signs in DK, DE, NL, AT, IT, BE, CZ, PL, ES, FI, UK and US — around 300
+  signs, all of which resolved a direction — but none at all in the sampled areas of SE, NO, FR and
+  CH, where nobody has mapped the boundaries. Check your own area on the verification map before
+  relying on it.
 * `direction=forward/backward` on a sign node is relative to the way it sits on, which needs road
   geometry that would blow past the size limit for in-ride requests. The town-centre bearing is
   used instead — it agrees with the tagging in the areas this has been checked against.

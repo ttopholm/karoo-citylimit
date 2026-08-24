@@ -24,8 +24,11 @@ object Overpass {
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
-     * Overpass QL query returning every city-limit sign node plus the place nodes needed to tell
-     * entry from exit within [bbox].
+     * Overpass QL query returning every city-limit sign node plus the places needed to tell entry
+     * from exit within [bbox].
+     *
+     * Places are collected as nodes, ways and relations: many towns are mapped only as an area, and
+     * `out center` gives those a usable centre point without pulling in their full geometry.
      */
     fun query(bbox: BoundingBox, timeoutSeconds: Int = 60): String {
         val box = "${fmt(bbox.south)},${fmt(bbox.west)},${fmt(bbox.north)},${fmt(bbox.east)}"
@@ -34,8 +37,10 @@ object Overpass {
             (
               node($box)[~"^traffic_sign(:(forward|backward|both))?${'$'}"~"${TrafficSignCodes.OVERPASS_VALUE_REGEX}",i];
               node($box)["place"~"$PLACE_REGEX"];
+              way($box)["place"~"$PLACE_REGEX"];
+              relation($box)["place"~"$PLACE_REGEX"];
             );
-            out body qt;
+            out center qt;
         """.trimIndent()
     }
 
@@ -49,6 +54,7 @@ object Overpass {
         val response = json.decodeFromString<OverpassResponse>(body)
         val places = response.elements.mapNotNull { it.toPlace() }
         return response.elements.mapNotNull { element ->
+            if (element.isArea) return@mapNotNull null
             val position = element.position() ?: return@mapNotNull null
             val sides = TrafficSignCodes.classify(element.tags)
             if (!sides.entry) return@mapNotNull null
@@ -78,6 +84,11 @@ object Overpass {
         return signPosition.bearingTo(place.position)
     }
 
+    /**
+     * The place a sign belongs to: the one it names when that name is mapped nearby, otherwise the
+     * nearest place. Mapped nodes win over area centres for an unnamed sign, since a node sits at
+     * the town centre while an area centre is only the middle of its bounding box.
+     */
     internal fun matchPlace(signPosition: LatLng, signName: String?, places: List<PlaceNode>): PlaceNode? {
         val normalized = signName?.trim()?.lowercase()
         if (!normalized.isNullOrEmpty()) {
@@ -88,10 +99,14 @@ object Overpass {
                 return named
             }
         }
-        return places
+        val (nodes, areas) = places.partition { !it.isArea }
+        return nearestWithin(signPosition, nodes) ?: nearestWithin(signPosition, areas)
+    }
+
+    private fun nearestWithin(signPosition: LatLng, places: List<PlaceNode>): PlaceNode? =
+        places
             .minByOrNull { signPosition.distanceTo(it.position) }
             ?.takeIf { signPosition.distanceTo(it.position) <= MAX_NEAREST_PLACE_DISTANCE_METERS }
-    }
 
     @Serializable
     private data class OverpassResponse(
@@ -104,20 +119,27 @@ object Overpass {
         val id: Long = 0,
         val lat: Double? = null,
         val lon: Double? = null,
+        /** Present for ways and relations queried with `out center`. */
+        val center: Center? = null,
         @SerialName("tags") val tags: Map<String, String> = emptyMap(),
     ) {
+        val isArea: Boolean get() = type != "node"
+
         fun position(): LatLng? {
-            val lat = lat ?: return null
-            val lon = lon ?: return null
+            val lat = lat ?: center?.lat ?: return null
+            val lon = lon ?: center?.lon ?: return null
             return LatLng(lat, lon)
         }
 
         fun toPlace(): PlaceNode? {
             val kind = tags["place"] ?: return null
             val position = position() ?: return null
-            return PlaceNode(id = id, position = position, name = tags["name"], kind = kind)
+            return PlaceNode(id = id, position = position, name = tags["name"], kind = kind, isArea = isArea)
         }
     }
+
+    @Serializable
+    private data class Center(val lat: Double, val lon: Double)
 
     private fun fmt(value: Double): String = String.format(Locale.ROOT, "%.6f", value)
 }

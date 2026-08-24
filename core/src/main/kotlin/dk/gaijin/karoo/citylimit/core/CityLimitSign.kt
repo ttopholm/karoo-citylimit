@@ -38,7 +38,10 @@ data class CityLimitSign(
 }
 
 /**
- * A `place=*` node used to work out which side of a sign the town is on.
+ * A `place=*` element used to work out which side of a sign the town is on.
+ *
+ * Usually a node at the town centre. Where a town is only mapped as an area, the centre of that
+ * area is used instead - less precise, but enough to tell "into town" from "out of town".
  */
 @Serializable
 data class PlaceNode(
@@ -46,4 +49,6 @@ data class PlaceNode(
     val position: LatLng,
     val name: String?,
     val kind: String,
+    /** True when the position is the centre of a `place` area rather than a mapped node. */
+    val isArea: Boolean = false,
 )

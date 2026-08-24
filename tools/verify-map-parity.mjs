@@ -55,6 +55,26 @@ check('forward/backward pair', (s => s.entry && s.exit && s.directional)(C.class
 check('bearing north', Math.abs(C.bearing({lat:55.9339,lng:12.3010},{lat:56.0,lng:12.3010})) < 0.5);
 check('distance matches Kotlin', Math.abs(C.distance({lat:55.9339,lng:12.3010},{lat:55.6761,lng:12.5683}) - 33180) < 200);
 check('bearing difference wraps', C.bearingDifference(350, 10) === 20);
+check('query collects place nodes, ways and relations', (q => q.includes('node(') && q.includes('way(') && q.includes('relation(') && q.includes('out center qt;'))(C.buildQuery({south:55.85,west:12.25,north:55.90,east:12.35})));
+
+// Areas as a fallback for towns without a place node, mirroring OverpassTest.
+const areaOnly = C.parseResponse(JSON.stringify({ elements: [
+  { type:'node', id: 1, lat: 55.91, lon: 12.28, tags: { traffic_sign: 'city_limit', name: 'Arealby' } },
+  { type:'way', id: 500, center: { lat: 55.90, lon: 12.28 }, tags: { name: 'Arealby', place: 'village' } },
+]}));
+check('area centre gives a direction', Math.abs(areaOnly.signs[0]?.entryHeading - 180) < 2, `${Math.round(areaOnly.signs[0]?.entryHeading)}°`);
+check('area is not parsed as a sign', C.parseResponse(JSON.stringify({ elements: [
+  { type:'way', id: 600, center: { lat: 55.9, lon: 12.28 }, tags: { traffic_sign: 'city_limit', name: 'Vejby' } },
+]})).signs.length === 0);
+check('node beats area centre for an unnamed sign', C.matchPlace({lat:55.90,lng:12.28}, null, [
+  { id: 1, position: {lat:55.896,lng:12.28}, name: 'Nodeby', kind: 'village', isArea: false },
+  { id: 2, position: {lat:55.899,lng:12.28}, name: 'Arealby', kind: 'suburb', isArea: true },
+]).id === 1);
+check('named area beats unrelated node', C.matchPlace({lat:55.90,lng:12.28}, 'Skiltby', [
+  { id: 1, position: {lat:55.898,lng:12.28}, name: 'Nabolandsby', kind: 'village', isArea: false },
+  { id: 2, position: {lat:55.895,lng:12.28}, name: 'Skiltby', kind: 'town', isArea: true },
+]).id === 2);
+
 check('query has bbox and filters', (q => q.includes('55.850000,12.250000,55.900000,12.350000') && q.includes('traffic_sign') && q.includes('place'))(C.buildQuery({south:55.85,west:12.25,north:55.90,east:12.35})));
 
 // Exit-only nodes must be dropped, mirroring OverpassTest.
