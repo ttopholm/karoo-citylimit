@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ExtensionInfo
+    id="citylimit"
+    displayName="@string/extension_name"
+    icon="@drawable/ic_city_limit">
+    <BonusAction
+        actionId="open-settings"
+        displayName="@string/action_open_settings" />
+    <BonusAction
+        actionId="download-area"
+        displayName="@string/action_download_here" />
+</ExtensionInfo>

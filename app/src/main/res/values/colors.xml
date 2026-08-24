@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Danish town-entry signs (E55) are white with black text; the alert mimics that. -->
+    <color name="alert_background">#FFFFFFFF</color>
+    <color name="alert_text">#FF101010</color>
+    <color name="icon_tint">#FF101010</color>
+</resources>
