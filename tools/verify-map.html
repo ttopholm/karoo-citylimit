@@ -457,29 +457,29 @@
   // Overpass rejects requests from a null origin, so a page opened straight from disk can never
   // download anything. Say so up front instead of letting it fail as a CORS error.
   /*
-   * Overpass answers server-to-server requests fine but rejects the same query from a browser with
-   * 406 - the Referer and Origin the browser attaches are enough to trip it. When this page is
-   * hosted (Netlify), the request goes through a same-origin proxy path instead, so Overpass sees a
-   * plain server call and CORS never enters into it. Served from localhost there is no proxy, so it
-   * falls back to calling Overpass directly, without a referrer.
+   * Overpass rejects the query when it arrives with a browser's headers, so a hosted page cannot
+   * call it directly - and a proxy rewrite does not help either, since it passes those headers on.
+   * When hosted, the request goes to /api/overpass, a small function that fetches Overpass itself
+   * with a fixed set of headers. Served from localhost there is no function, so the page falls back
+   * to calling Overpass directly without a referrer, which usually works from a local page.
    */
   var SERVERS = {
-    'overpass-api.de': { proxy: '/api/overpass', direct: 'https://overpass-api.de/api/interpreter' },
-    'kumi': { proxy: '/api/overpass-kumi', direct: 'https://overpass.kumi.systems/api/interpreter' },
-    'coffee': { proxy: '/api/overpass-coffee', direct: 'https://overpass.private.coffee/api/interpreter' }
+    'overpass-api.de': { proxy: '/api/overpass?server=de', direct: 'https://overpass-api.de/api/interpreter' },
+    'kumi': { proxy: '/api/overpass?server=kumi', direct: 'https://overpass.kumi.systems/api/interpreter' },
+    'coffee': { proxy: '/api/overpass?server=coffee', direct: 'https://overpass.private.coffee/api/interpreter' }
   };
   var hosted = location.protocol.indexOf('http') === 0 &&
     location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
 
-  /** Ask the proxy first when hosted, and keep the direct call as a fallback. */
+  /** Ask the function first when hosted, and keep the direct call as a fallback. */
   function requestQuery(server, query) {
     var attempts = [];
-    if (hosted) attempts.push({ url: server.proxy, proxied: true });
-    attempts.push({ url: server.direct, proxied: false });
+    if (hosted) attempts.push({ url: server.proxy, viaFunction: true });
+    attempts.push({ url: server.direct, viaFunction: false });
 
-    var lastError = null;
+    var firstError = null;
     var next = function (index) {
-      if (index >= attempts.length) return Promise.reject(lastError || new Error('ingen server svarede'));
+      if (index >= attempts.length) return Promise.reject(firstError || new Error('ingen server svarede'));
       var attempt = attempts[index];
       return fetch(attempt.url, {
         method: 'POST',
@@ -487,10 +487,13 @@
         body: query,
         referrerPolicy: 'no-referrer'
       }).then(function (response) {
-        if (!response.ok) throw new Error('HTTP ' + response.status + (attempt.proxied ? ' (via proxy)' : ''));
-        return response.text();
+        if (response.ok) return response.text();
+        // The function reports what Overpass told it, which is more useful than a bare status.
+        return response.text().then(function (detail) {
+          throw new Error(attempt.viaFunction && detail ? detail.slice(0, 300) : 'HTTP ' + response.status);
+        });
       }).catch(function (error) {
-        lastError = error;
+        if (firstError === null) firstError = error;
         return next(index + 1);
       });
     };

@@ -7,28 +7,11 @@
 [build]
   publish = "tools"
   command = ""
+  functions = "netlify/functions"
 
-# Overpass answers server-to-server calls fine, but rejects the same request from a browser with
-# 406 - the browser-set Referer and Origin headers are enough to trip it. Proxying through Netlify
-# means the request reaches Overpass from a server, and the page talks to its own origin, so CORS
-# stops being involved at all.
-[[redirects]]
-  from = "/api/overpass"
-  to = "https://overpass-api.de/api/interpreter"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/overpass-kumi"
-  to = "https://overpass.kumi.systems/api/interpreter"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/overpass-coffee"
-  to = "https://overpass.private.coffee/api/interpreter"
-  status = 200
-  force = true
+# Overpass rejects browser requests, and a plain proxy rewrite does not help because it forwards the
+# browser's headers unchanged. netlify/functions/overpass.mjs makes its own request with a fixed set
+# of headers instead, and serves /api/overpass from this origin.
 
 # The map is the only page worth serving, so make it the front page.
 [[redirects]]
