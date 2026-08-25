@@ -148,8 +148,13 @@ CI signs with a key held in repository secrets. Create one once and add it:
 ```bash
 keytool -genkeypair -v -keystore release.jks -alias citylimit \
   -keyalg RSA -keysize 2048 -validity 10000
-base64 -w0 release.jks     # paste as the KEYSTORE_BASE64 secret
+
+# One long line to paste as the KEYSTORE_BASE64 secret. Works on both macOS and Linux
+# (`base64 -w0` is GNU-only and fails on macOS):
+base64 < release.jks | tr -d '\n'
 ```
+
+On macOS, add `| pbcopy` to put it straight on the clipboard.
 
 Then set `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD` under Settings →
 Secrets and variables → Actions. Keep `release.jks` out of the repository and back it up: losing it
