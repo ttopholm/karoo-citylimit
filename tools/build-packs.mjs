@@ -38,7 +38,10 @@ const REGIONS = [
   {
     id: 'dk',
     name: 'Danmark',
+    // The box reaches into Skåne and Schleswig, so signs are clipped to the country itself. Places
+    // are not clipped: a sign near the border still has to find the town it names, wherever it is.
     bounds: { south: 54.50, west: 8.00, north: 57.80, east: 15.25 },
+    area: '["ISO3166-1"="DK"][admin_level=2]',
     tile: { lat: 0.5, lng: 1.0 },
   },
 ];
@@ -53,6 +56,9 @@ const USER_AGENT = 'karoo-citylimit-pack-builder/1.0 (+https://github.com/ttopho
 
 /** Chunks stay under the 100 KB limit on requests made through the Karoo system. */
 const MAX_CHUNK_BYTES = 80_000;
+
+/** Matches Overpass.PLACE_SEARCH_MARGIN_METERS in core/. */
+const PLACE_MARGIN_METERS = 5_000;
 
 const REQUEST_SPACING_MS = 4_000;
 const MAX_ATTEMPTS = 6;
@@ -125,12 +131,41 @@ function tilesOf(region) {
   return tiles;
 }
 
+/**
+ * Signs from within the region's own borders, places from a wider area around the tile so a sign
+ * near the border can still be tied to the town it names.
+ */
+function queryFor(region, tile) {
+  if (!region.area) return C.buildQuery(tile, 180);
+
+  const format = (b) => [b.south, b.west, b.north, b.east].map((v) => v.toFixed(6)).join(',');
+  const midLatitude = (tile.south + tile.north) / 2;
+  const latDelta = PLACE_MARGIN_METERS / 111320;
+  const lngDelta = PLACE_MARGIN_METERS / Math.max(1, 111320 * Math.cos((midLatitude * Math.PI) / 180));
+  const placeBox = format({
+    south: tile.south - latDelta,
+    west: tile.west - lngDelta,
+    north: tile.north + latDelta,
+    east: tile.east + lngDelta,
+  });
+  const signBox = format(tile);
+  return `[out:json][timeout:180];
+area${region.area}->.region;
+(
+  node(area.region)(${signBox})[~"^traffic_sign(:(forward|backward|both))?$"~"${C.OVERPASS_VALUE_REGEX}",i];
+  node(${placeBox})["place"~"${C.PLACE_REGEX}"];
+  way(${placeBox})["place"~"${C.PLACE_REGEX}"];
+  relation(${placeBox})["place"~"${C.PLACE_REGEX}"];
+);
+out center qt;`;
+}
+
 async function collect(region) {
   const elements = new Map();
   const tiles = tilesOf(region);
   console.log(`  ${tiles.length} felter at hente`);
   for (const [index, tile] of tiles.entries()) {
-    const data = await overpass(C.buildQuery(tile, 180));
+    const data = await overpass(queryFor(region, tile));
     let added = 0;
     for (const element of data.elements ?? []) {
       const key = `${element.type}/${element.id}`;

@@ -96,7 +96,12 @@ them under the fixed `packs` release, so the download URL never changes. Overpas
 once per rebuild instead of once per rider per area.
 
 On the device, *Download a region* in the settings screen lists what is available and installs a pack
-straight into the sign cache. Denmark is around 9,000 signs and well under a megabyte.
+straight into the sign cache. Denmark holds around 9,000 town-entry signs, which comes to roughly a
+megabyte spread over some 16 files — a rounding error next to the map downloads on the device.
+
+Signs are clipped to the region's own borders, so the Danish pack does not quietly carry Skåne and
+Schleswig along with it. Places are deliberately not clipped: a sign near a border still has to find
+the town it names, whichever country that town is in.
 
 Building or adding a region locally:
 
