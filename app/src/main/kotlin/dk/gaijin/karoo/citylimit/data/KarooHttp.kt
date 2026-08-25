@@ -17,6 +17,15 @@ import java.io.IOException
  */
 class KarooHttp(private val karooSystem: KarooSystemService) {
     /**
+     * GET [url] and return the response body as text.
+     */
+    suspend fun get(
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+        timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
+    ): Result<String> = request("GET", url, null, headers, timeoutMillis)
+
+    /**
      * POST [body] to [url] and return the response body as text.
      */
     suspend fun post(
@@ -24,11 +33,19 @@ class KarooHttp(private val karooSystem: KarooSystemService) {
         body: ByteArray,
         headers: Map<String, String> = emptyMap(),
         timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
+    ): Result<String> = request("POST", url, body, headers, timeoutMillis)
+
+    private suspend fun request(
+        method: String,
+        url: String,
+        body: ByteArray?,
+        headers: Map<String, String>,
+        timeoutMillis: Long,
     ): Result<String> {
         if (!karooSystem.connected) {
             return Result.failure(IOException("Karoo system service is not connected"))
         }
-        if (body.size > OnHttpResponse.MAX_REQUEST_SIZE) {
+        if (body != null && body.size > OnHttpResponse.MAX_REQUEST_SIZE) {
             return Result.failure(IOException("Request body too large"))
         }
 
@@ -36,7 +53,7 @@ class KarooHttp(private val karooSystem: KarooSystemService) {
             callbackFlow {
                 val consumerId = karooSystem.addConsumer<OnHttpResponse>(
                     OnHttpResponse.MakeHttpRequest(
-                        method = "POST",
+                        method = method,
                         url = url,
                         headers = headers,
                         body = body,

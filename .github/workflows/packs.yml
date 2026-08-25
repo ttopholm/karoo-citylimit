@@ -1,0 +1,68 @@
+name: Region packs
+
+# Builds the downloadable region packs and publishes them under the fixed "packs" release, so the
+# extension can always fetch:
+#   https://github.com/<owner>/<repo>/releases/download/packs/regions.json
+#
+# Runs monthly, since signs in OpenStreetMap change slowly, and on demand from the Actions tab.
+
+on:
+  schedule:
+    - cron: "0 3 1 * *"
+  workflow_dispatch:
+    inputs:
+      region:
+        description: "Only build this region id (blank builds all)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  packs:
+    runs-on: ubuntu-latest
+    # Overpass is a donated service and the builder waits between queries, so give it room.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: The map's logic still matches the extension
+        run: node tools/verify-map-parity.mjs
+
+      - name: Build the packs
+        run: |
+          if [ -n "${{ inputs.region }}" ]; then
+            node tools/build-packs.mjs --region "${{ inputs.region }}" --out build/packs
+          else
+            node tools/build-packs.mjs --out build/packs
+          fi
+
+      - name: Summarise
+        run: |
+          {
+            echo '### Region packs'
+            echo
+            echo '| Region | Signs | Cells | Size | Files |'
+            echo '| --- | --- | --- | --- | --- |'
+            for index in build/packs/*.json; do
+              case "$index" in *regions.json|*-[0-9][0-9][0-9].json) continue ;; esac
+              jq -r '"| \(.name) | \(.signs) | \(.cells) | \(.bytes/1024 | floor) kB | \(.chunks | length) |"' "$index"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh release view packs >/dev/null 2>&1; then
+            gh release create packs \
+              --title "Region packs" \
+              --notes "Sign data prepared for offline use, rebuilt monthly from OpenStreetMap via the Overpass API. Downloaded from the extension's settings screen."
+          fi
+          gh release upload packs build/packs/*.json --clobber

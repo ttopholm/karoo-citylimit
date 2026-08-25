@@ -79,6 +79,10 @@ check('places are queried from a wider box than signs', (() => {
   });
 })());
 
+// The grid the extension caches in; the pack builder groups signs by the same cells.
+check('cell id matches the extension grid', C.cellIdFor({lat:55.9339,lng:12.3010}) === '1118/123', C.cellIdFor({lat:55.9339,lng:12.3010}));
+check('cell id handles negative coordinates', C.cellIdFor({lat:-33.9,lng:-70.7}) === '-678/-707', C.cellIdFor({lat:-33.9,lng:-70.7}));
+
 check('spacing in a name does not matter', C.matchPlace({lat:55.93,lng:11.64}, 'Vesterlyng', [
   { id: 10038782603, position: {lat:55.9348,lng:11.6438}, name: 'Vester Lyng', kind: 'hamlet', isArea: false },
   { id: 2512942163, position: {lat:55.9312,lng:11.6967}, name: 'Øster Lyng', kind: 'village', isArea: false },

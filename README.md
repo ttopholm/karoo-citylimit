@@ -82,6 +82,32 @@ The following national sign codes are recognised, in addition to the generic `tr
 Sign data © OpenStreetMap contributors, available under the
 [Open Database License](https://www.openstreetmap.org/copyright).
 
+## Region packs
+
+Riding an area once caches it for 90 days, and a loaded route is prefetched cell by cell — but both
+still need a connection the first time. A region pack removes that: it puts a whole country on the
+device before you leave home.
+
+Packs are built by `tools/build-packs.mjs`, which asks Overpass for a country tile by tile, runs the
+same classification and town matching as the extension, and writes the result as grid cells split
+into files under 100 KB — small enough to also come through the Karoo system's HTTP API when the
+device has no Wi-Fi of its own. `.github/workflows/packs.yml` rebuilds them monthly and publishes
+them under the fixed `packs` release, so the download URL never changes. Overpass is then queried
+once per rebuild instead of once per rider per area.
+
+On the device, *Download a region* in the settings screen lists what is available and installs a pack
+straight into the sign cache. Denmark is around 9,000 signs and well under a megabyte.
+
+Building or adding a region locally:
+
+```bash
+node tools/build-packs.mjs --region dk --out build/packs
+node tools/build-packs.mjs --region dk --bounds 55.8,11.4,56.0,11.8   # a corner, for a quick try
+```
+
+A new country is a few lines in `REGIONS` at the top of the script: an id, a display name, its
+bounding box, and how finely to tile the Overpass queries.
+
 ## Settings
 
 Open **City Limit** from the Karoo app list, or map the *City Limit settings* bonus action to a
@@ -141,8 +167,9 @@ against the same fixtures the Kotlin tests use, and CI runs that check on every 
 ```
 core/   Pure Kotlin: geometry, sign classification, Overpass query/parsing, approach detection
 app/    Android app: the Karoo extension service, sign cache/downloader and the settings screen
-tools/  Standalone verification map and its parity check
-.github/workflows/  Tests and debug build on every push, signed release on every version tag
+tools/  Verification map, its parity check, and the region pack builder
+.github/workflows/  Tests and debug build on every push, signed release on every version tag,
+                    region packs rebuilt monthly
 ```
 
 All of the decision logic lives in `core/` and is covered by unit tests, including a simulated ride

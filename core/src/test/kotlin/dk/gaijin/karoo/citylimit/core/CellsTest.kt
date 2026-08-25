@@ -13,6 +13,13 @@ class CellsTest {
     }
 
     @Test
+    fun `cell ids are the ones the pack builder writes`() {
+        // tools/build-packs.mjs groups signs by these ids, and the parity check pins the same values.
+        assertEquals("1118/123", Cells.keyFor(LatLng(55.9339, 12.3010)).id)
+        assertEquals("-678/-707", Cells.keyFor(LatLng(-33.9, -70.7)).id)
+    }
+
+    @Test
     fun `negative coordinates land in the right cell`() {
         val key = Cells.keyFor(LatLng(-33.9, -70.7))
         assertTrue(key.bounds().contains(LatLng(-33.9, -70.7)))

@@ -36,6 +36,17 @@
     <string name="status_done">Downloaded %1$d signs in %2$d areas</string>
     <string name="status_failed">Download failed: %1$s</string>
 
+    <string name="regions_title">Download a region</string>
+    <string name="regions_desc">Puts a whole country on the device, so no connection is needed while riding. Best done on Wi-Fi.</string>
+    <string name="regions_size">%1$d signs · %2$d kB</string>
+    <string name="regions_download">Download</string>
+    <string name="regions_loading">Looking up available regions…</string>
+    <string name="regions_progress">Downloading %1$s: part %2$d of %3$d…</string>
+    <string name="regions_installed">%1$s installed: %2$d signs</string>
+    <string name="regions_failed">Region download failed: %1$s</string>
+    <string name="regions_none">No regions available. Needs a connection to look them up.</string>
+    <string name="regions_retry">Look for regions again</string>
+
     <string name="meters_format">%1$d m</string>
     <string name="seconds_format">%1$d s</string>
 
