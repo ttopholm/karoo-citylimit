@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Byskilt – verifikationskort</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #app { display: flex; height: 100%; }
+  #map { flex: 1; min-width: 0; }
+  #panel { width: 340px; overflow-y: auto; padding: 14px; border-left: 1px solid #d8d8d8; background: #fafafa; }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: #555; margin: 18px 0 6px; }
+  p.intro { margin: 0 0 8px; color: #444; font-size: 12.5px; }
+  label { display: block; margin: 6px 0; }
+  label.inline { display: flex; align-items: center; gap: 8px; }
+  input[type=number] { width: 76px; }
+  select, button { font: inherit; }
+  button { padding: 7px 10px; border: 1px solid #bbb; border-radius: 6px; background: #fff; cursor: pointer; }
+  button:hover:not(:disabled) { background: #f0f0f0; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: #1b5e20; border-color: #1b5e20; color: #fff; }
+  button.active { background: #1b5e20; border-color: #1b5e20; color: #fff; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .stats { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 10px; font-size: 13px; }
+  .stats b { font-variant-numeric: tabular-nums; }
+  .legend div { display: flex; align-items: center; gap: 8px; margin: 3px 0; font-size: 12.5px; }
+  .dot { width: 13px; height: 13px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #666; flex: none; }
+  .entry { background: #1b5e20; }
+  .unknown { background: #ef6c00; }
+  .dropped { background: #9e9e9e; }
+  .place { background: #1565c0; }
+  ol.alerts { padding-left: 20px; margin: 6px 0; }
+  ol.alerts li { margin-bottom: 4px; cursor: pointer; }
+  ol.alerts li:hover { text-decoration: underline; }
+  .muted { color: #666; font-size: 12.5px; }
+  .error { color: #b71c1c; }
+  .banner { background: #fff3e0; border: 1px solid #ef6c00; border-radius: 6px; padding: 10px; margin-bottom: 10px; font-size: 12.5px; }
+  .banner code { display: block; background: #fff; border: 1px solid #e0e0e0; border-radius: 4px; padding: 6px; margin: 6px 0 0; overflow-x: auto; white-space: pre; }
+  table.tags { border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+  table.tags td { border-top: 1px solid #eee; padding: 1px 6px 1px 0; vertical-align: top; }
+  table.tags td:first-child { color: #555; white-space: nowrap; }
+  .arrow-icon { font-size: 19px; line-height: 19px; color: #1b5e20; text-shadow: 0 0 3px #fff, 0 0 3px #fff; }
+  .alert-icon { font-size: 20px; line-height: 20px; text-shadow: 0 0 3px #fff, 0 0 3px #fff; }
+  @media (max-width: 720px) {
+    #app { flex-direction: column; }
+    #map { height: 55vh; flex: none; }
+    #panel { width: auto; border-left: none; border-top: 1px solid #d8d8d8; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map"></div>
+  <div id="panel">
+    <h1>Byskilt – verifikationskort</h1>
+    <div class="banner" id="file-warning" hidden>
+      Siden er åbnet direkte fra disken (<code style="display:inline;border:none;padding:0">file://</code>),
+      og så sender browseren <code style="display:inline;border:none;padding:0">Origin: null</code>, som Overpass
+      afviser. Server den i stedet lokalt fra repoets rod:
+      <code>python3 -m http.server 8000</code>
+      <span id="file-warning-link"></span>
+    </div>
+    <p class="intro">
+      Henter byskilte fra Overpass for kortudsnittet og kører samme logik som Karoo-udvidelsen:
+      hvilke skilte beholdes, hvilken retning tæller som indkørsel, og hvor ville alarmen udløses.
+    </p>
+
+    <div class="row">
+      <button id="load" class="primary">Hent skilte for kortudsnittet</button>
+    </div>
+    <label>Overpass-server
+      <select id="endpoint">
+        <option value="https://overpass-api.de/api/interpreter">overpass-api.de</option>
+        <option value="https://overpass.kumi.systems/api/interpreter">overpass.kumi.systems</option>
+        <option value="https://overpass.private.coffee/api/interpreter">overpass.private.coffee</option>
+      </select>
+    </label>
+    <div id="load-status" class="muted">Ingen data hentet endnu.</div>
+
+    <h2>Indstillinger</h2>
+    <label>Alarmafstand <input type="number" id="alertDistance" value="200" min="20" max="1000" step="10"> m</label>
+    <label>Kegle mod skiltet <input type="number" id="approachCone" value="55" min="10" max="180" step="5">°</label>
+    <label>Kegle ind mod byen <input type="number" id="entryCone" value="80" min="10" max="180" step="5">°</label>
+    <label class="inline"><input type="checkbox" id="unknownDirection"> Advar ved ukendt retning</label>
+
+    <h2>Simuler en tur</h2>
+    <p class="muted">Klik på kortet for at tegne en rute, og kør den i begge retninger. Du bør få besked ved indkørsel og intet ved skiltet med streg over.</p>
+    <div class="row">
+      <button id="draw">Tegn rute</button>
+      <button id="clearRoute">Ryd rute</button>
+    </div>
+    <div class="row">
+      <button id="runForward" disabled>Kør ruten</button>
+      <button id="runBackward" disabled>Kør baglæns</button>
+    </div>
+    <div id="sim-status" class="muted">Ingen rute tegnet.</div>
+    <ol class="alerts" id="alerts"></ol>
+
+    <h2>Status</h2>
+    <div class="stats" id="stats">
+      <div>Skilte i brug: <b id="stat-kept">0</b></div>
+      <div>Heraf uden kendt retning: <b id="stat-unknown">0</b></div>
+      <div>Kasseret (kun streg over): <b id="stat-dropped">0</b></div>
+      <div>Byer til retningsbestemmelse: <b id="stat-places">0</b> (heraf <b id="stat-areas">0</b> arealer)</div>
+    </div>
+
+    <h2>Signaturforklaring</h2>
+    <div class="legend">
+      <div><span class="dot entry"></span> Byskilt ved indkørsel (pil = retning ind i byen)</div>
+      <div><span class="dot unknown"></span> Byskilt uden kendt retning</div>
+      <div><span class="dot dropped"></span> Kasseret: kun skilt med streg over</div>
+      <div><span class="dot place"></span> Bynode brugt til retningen</div>
+      <div><span class="dot place" style="background:#fff"></span> Midte af byareal (by uden bynode)</div>
+      <div><span class="alert-icon">🔔</span> Her ville alarmen lyde</div>
+    </div>
+
+    <h2>Data</h2>
+    <p class="muted">
+      Skiltedata fra OpenStreetMap-bidragydere via Overpass API (ODbL).
+      Kortbaggrund © OpenStreetMap-bidragydere.
+    </p>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script id="citylimit-logic">
+/*
+ * Samme logik som core/ i Karoo-udvidelsen: skilteklassifikation, retning ind i byen
+ * og beslutningen om hvornår der gives besked. Holdes bevidst fri for DOM, så den kan
+ * køres og efterprøves for sig.
+ */
+(function (root) {
+  'use strict';
+
+  var EARTH_RADIUS_METERS = 6371008.8;
+  var toRad = function (deg) { return deg * Math.PI / 180; };
+  var toDeg = function (rad) { return rad * 180 / Math.PI; };
+
+  function distance(a, b) {
+    var lat1 = toRad(a.lat), lat2 = toRad(b.lat);
+    var dLat = lat2 - lat1, dLng = toRad(b.lng - a.lng);
+    var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 2 * EARTH_RADIUS_METERS * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+
+  function bearing(a, b) {
+    var lat1 = toRad(a.lat), lat2 = toRad(b.lat), dLng = toRad(b.lng - a.lng);
+    var y = Math.sin(dLng) * Math.cos(lat2);
+    var x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+    return normalizeBearing(toDeg(Math.atan2(y, x)));
+  }
+
+  function destination(from, meters, bearingDeg) {
+    var angular = meters / EARTH_RADIUS_METERS;
+    var lat1 = toRad(from.lat), lng1 = toRad(from.lng), brg = toRad(bearingDeg);
+    var lat2 = Math.asin(Math.sin(lat1) * Math.cos(angular) + Math.cos(lat1) * Math.sin(angular) * Math.cos(brg));
+    var lng2 = lng1 + Math.atan2(
+      Math.sin(brg) * Math.sin(angular) * Math.cos(lat1),
+      Math.cos(angular) - Math.sin(lat1) * Math.sin(lat2)
+    );
+    return { lat: toDeg(lat2), lng: ((toDeg(lng2) + 540) % 360) - 180 };
+  }
+
+  function normalizeBearing(deg) {
+    var mod = deg % 360;
+    return mod < 0 ? mod + 360 : mod;
+  }
+
+  function bearingDifference(a, b) {
+    var diff = Math.abs(normalizeBearing(a) - normalizeBearing(b)) % 360;
+    return diff > 180 ? 360 - diff : diff;
+  }
+
+  var GENERIC = 'city_limit';
+  var ENTRY = /^(city_limit:begin|dk:e55|de:310|at:53-?17a|at:53a|ch:4\.(27|29)|se:e5|no:365|fi:571|nl:h01|be:f1[ab]?|fr:eb10|es:s-?500|pl:d-?42|cz:iz4a)$/;
+  var EXIT = /^(city_limit:end|dk:e56|de:311|at:53-?17b|at:53b|ch:4\.(28|30)|se:e6|no:366|fi:572|nl:h02|be:f3[ab]?|fr:eb20|es:s-?510|pl:d-?43|cz:iz4b)$/;
+  var SIGN_KEY = /^traffic_sign(:(forward|backward|both))?$/;
+  var OVERPASS_VALUE_REGEX = 'city_limit|E5[56]|31[01]|53-?17[ab]|4\\.(27|28|29|30)|36[56]|57[12]|H0[12]|F[13][ab]?|EB[12]0|S-?5[01]0|D-?4[23]|IZ4[ab]';
+  var PLACE_REGEX = '^(city|town|village|hamlet|suburb|borough|quarter)$';
+
+  var MAX_NAMED_PLACE_DISTANCE_METERS = 15000;
+  var MAX_NEAREST_PLACE_DISTANCE_METERS = 3000;
+  var MIN_PLACE_DISTANCE_METERS = 25;
+
+  function splitCodes(value) {
+    return String(value).split(';')
+      .map(function (token) { return token.split('[')[0].trim().toLowerCase(); })
+      .filter(function (token) { return token.length > 0; });
+  }
+
+  /** -> { entry, exit, directional } */
+  function classify(tags) {
+    var entry = false, exit = false, directional = false, generic = false;
+    Object.keys(tags || {}).forEach(function (key) {
+      if (!SIGN_KEY.test(key)) return;
+      splitCodes(tags[key]).forEach(function (token) {
+        if (token === GENERIC) {
+          generic = true;
+        } else if (EXIT.test(token)) {
+          exit = true; directional = true;
+        } else if (ENTRY.test(token)) {
+          entry = true; directional = true;
+        }
+      });
+    });
+    if (generic) {
+      var refinement = (tags['city_limit'] || '').trim().toLowerCase();
+      if (refinement === 'begin' || refinement === 'start') {
+        entry = true; directional = true;
+      } else if (refinement === 'end') {
+        exit = true; directional = true;
+      } else {
+        entry = true; exit = true;
+      }
+    }
+    return { entry: entry, exit: exit, directional: directional };
+  }
+
+  /*
+   * Byen et skilt hører til: den by skiltet navngiver, hvis navnet er mappet i nærheden, ellers den
+   * nærmeste by. En mappet bynode vinder over midten af et byareal, fordi noden ligger i bymidten,
+   * mens arealets centrum kun er midten af dets omsluttende rektangel.
+   */
+  function matchPlace(position, signName, places) {
+    var normalized = (signName || '').trim().toLowerCase();
+    if (normalized) {
+      var named = places.filter(function (place) {
+        return (place.name || '').trim().toLowerCase() === normalized;
+      });
+      var nearestNamed = nearest(position, named);
+      if (nearestNamed && distance(position, nearestNamed.position) <= MAX_NAMED_PLACE_DISTANCE_METERS) {
+        return nearestNamed;
+      }
+    }
+    var nodes = places.filter(function (place) { return !place.isArea; });
+    var areas = places.filter(function (place) { return place.isArea; });
+    return nearestWithin(position, nodes) || nearestWithin(position, areas);
+  }
+
+  function nearestWithin(position, places) {
+    var candidate = nearest(position, places);
+    if (candidate && distance(position, candidate.position) <= MAX_NEAREST_PLACE_DISTANCE_METERS) {
+      return candidate;
+    }
+    return null;
+  }
+
+  function nearest(position, places) {
+    var best = null, bestDistance = Infinity;
+    places.forEach(function (place) {
+      var d = distance(position, place.position);
+      if (d < bestDistance) { best = place; bestDistance = d; }
+    });
+    return best;
+  }
+
+  function entryHeading(position, place) {
+    if (!place) return null;
+    if (distance(position, place.position) < MIN_PLACE_DISTANCE_METERS) return null;
+    return bearing(position, place.position);
+  }
+
+  /**
+   * Overpass-svar -> { signs, dropped, places }.
+   * `signs` er dem udvidelsen bruger, `dropped` er noder der kun bærer skiltet med streg over.
+   */
+  function parseResponse(body) {
+    var elements = (typeof body === 'string' ? JSON.parse(body) : body).elements || [];
+    var positionOf = function (element) {
+      var lat = element.lat != null ? element.lat : (element.center ? element.center.lat : null);
+      var lon = element.lon != null ? element.lon : (element.center ? element.center.lon : null);
+      return (lat == null || lon == null) ? null : { lat: lat, lng: lon };
+    };
+
+    var places = [];
+    elements.forEach(function (element) {
+      var tags = element.tags || {};
+      var position = positionOf(element);
+      if (!tags.place || !position) return;
+      places.push({
+        id: element.id,
+        position: position,
+        name: tags.name || null,
+        kind: tags.place,
+        isArea: element.type !== 'node'
+      });
+    });
+
+    var signs = [], dropped = [];
+    elements.forEach(function (element) {
+      var tags = element.tags || {};
+      if (element.type !== 'node' || element.lat == null || element.lon == null) return;
+      var sides = classify(tags);
+      if (!sides.entry && !sides.exit) return;
+      var position = { lat: element.lat, lng: element.lon };
+      if (!sides.entry) {
+        dropped.push({ id: element.id, position: position, name: tags.name || null, tags: tags });
+        return;
+      }
+      var signName = (tags.name || tags['city_limit:name'] || '').trim() || null;
+      var place = matchPlace(position, signName, places);
+      signs.push({
+        id: element.id,
+        position: position,
+        name: signName || (place && place.name) || null,
+        maxSpeed: (tags.maxspeed || '').trim() || null,
+        entryHeading: entryHeading(position, place),
+        townId: place ? place.id : null,
+        genericBoundary: !sides.directional,
+        place: place,
+        tags: tags
+      });
+    });
+    return { signs: signs, dropped: dropped, places: places };
+  }
+
+  function dedupeKey(sign) {
+    if (sign.townId != null) return 'place/' + sign.townId;
+    if (sign.name) return sign.name.trim().toLowerCase();
+    return 'node/' + sign.id;
+  }
+
+  var DEFAULT_CONFIG = {
+    alertDistanceMeters: 200,
+    approachConeDeg: 55,
+    entryConeDeg: 80,
+    alertWhenDirectionUnknown: false,
+    cooldownMillis: 10 * 60 * 1000
+  };
+
+  function createDetector(config) {
+    var settings = Object.assign({}, DEFAULT_CONFIG, config || {});
+    var announced = {};
+    return {
+      update: function (position, heading, signs, nowMillis) {
+        if (heading === null || heading === undefined) return null;
+        Object.keys(announced).forEach(function (key) {
+          if (nowMillis - announced[key] >= settings.cooldownMillis) delete announced[key];
+        });
+        var best = null, bestDistance = Infinity;
+        signs.forEach(function (sign) {
+          var d = distance(position, sign.position);
+          if (d > settings.alertDistanceMeters) return;
+          if (bearingDifference(heading, bearing(position, sign.position)) > settings.approachConeDeg) return;
+          if (sign.entryHeading === null || sign.entryHeading === undefined) {
+            if (!settings.alertWhenDirectionUnknown) return;
+          } else if (bearingDifference(heading, sign.entryHeading) > settings.entryConeDeg) {
+            return;
+          }
+          if (announced[dedupeKey(sign)] !== undefined) return;
+          if (d < bestDistance) { best = sign; bestDistance = d; }
+        });
+        if (!best) return null;
+        announced[dedupeKey(best)] = nowMillis;
+        return { sign: best, distanceMeters: bestDistance };
+      },
+      reset: function () { announced = {}; }
+    };
+  }
+
+  /**
+   * Kører en rute igennem detektoren i skridt på 10 m, som udvidelsen gør med positionsopdateringer.
+   */
+  function simulateRide(points, signs, config) {
+    var detector = createDetector(config);
+    var alerts = [];
+    var time = 0;
+    for (var i = 0; i < points.length - 1; i++) {
+      var from = points[i], to = points[i + 1];
+      var heading = bearing(from, to);
+      var total = distance(from, to);
+      for (var travelled = 0; travelled <= total; travelled += 10) {
+        var position = destination(from, travelled, heading);
+        var alert = detector.update(position, heading, signs, time);
+        if (alert) alerts.push({ sign: alert.sign, distanceMeters: alert.distanceMeters, position: position });
+        time += 1400;
+      }
+    }
+    return alerts;
+  }
+
+  function buildQuery(bounds, timeoutSeconds) {
+    var box = [bounds.south, bounds.west, bounds.north, bounds.east]
+      .map(function (value) { return value.toFixed(6); }).join(',');
+    return '[out:json][timeout:' + (timeoutSeconds || 60) + '];\n' +
+      '(\n' +
+      '  node(' + box + ')[~"^traffic_sign(:(forward|backward|both))?$"~"' + OVERPASS_VALUE_REGEX + '",i];\n' +
+      '  node(' + box + ')["place"~"' + PLACE_REGEX + '"];\n' +
+      '  way(' + box + ')["place"~"' + PLACE_REGEX + '"];\n' +
+      '  relation(' + box + ')["place"~"' + PLACE_REGEX + '"];\n' +
+      ');\n' +
+      'out center qt;';
+  }
+
+  root.CityLimit = {
+    distance: distance,
+    bearing: bearing,
+    destination: destination,
+    bearingDifference: bearingDifference,
+    classify: classify,
+    matchPlace: matchPlace,
+    entryHeading: entryHeading,
+    parseResponse: parseResponse,
+    dedupeKey: dedupeKey,
+    createDetector: createDetector,
+    simulateRide: simulateRide,
+    buildQuery: buildQuery,
+    DEFAULT_CONFIG: DEFAULT_CONFIG
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+</script>
+
+<script>
+(function () {
+  'use strict';
+  var C = globalThis.CityLimit;
+
+  var START = { lat: 55.9339, lng: 12.3010, zoom: 13 };
+  try {
+    var saved = JSON.parse(localStorage.getItem('citylimit-view') || 'null');
+    if (saved && typeof saved.lat === 'number') START = saved;
+  } catch (error) { /* privat vindue eller blokeret lager */ }
+
+  var map = L.map('map').setView([START.lat, START.lng], START.zoom);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bidragydere'
+  }).addTo(map);
+
+  map.on('moveend', function () {
+    try {
+      var center = map.getCenter();
+      localStorage.setItem('citylimit-view', JSON.stringify({ lat: center.lat, lng: center.lng, zoom: map.getZoom() }));
+    } catch (error) { /* ignoreres */ }
+  });
+
+  var signLayer = L.layerGroup().addTo(map);
+  var alertLayer = L.layerGroup().addTo(map);
+  var routeLayer = L.layerGroup().addTo(map);
+
+  var data = { signs: [], dropped: [], places: [] };
+  var routePoints = [];
+  var routeLine = null;
+  var drawing = false;
+
+  var element = function (id) { return document.getElementById(id); };
+  var loadStatus = element('load-status');
+  var simStatus = element('sim-status');
+
+  // Overpass rejects requests from a null origin, so a page opened straight from disk can never
+  // download anything. Say so up front instead of letting it fail as a CORS error.
+  var openedFromDisk = location.protocol === 'file:';
+  if (openedFromDisk) {
+    element('file-warning').hidden = false;
+    var name = location.pathname.split('/').pop() || 'verify-map.html';
+    element('file-warning-link').innerHTML =
+      'og åbn <a href="http://localhost:8000/tools/' + name + '">http://localhost:8000/tools/' + name + '</a>';
+  }
+
+  function config() {
+    return {
+      alertDistanceMeters: Number(element('alertDistance').value) || 200,
+      approachConeDeg: Number(element('approachCone').value) || 55,
+      entryConeDeg: Number(element('entryCone').value) || 80,
+      alertWhenDirectionUnknown: element('unknownDirection').checked
+    };
+  }
+
+  function tagTable(tags) {
+    return '<table class="tags">' + Object.keys(tags).sort().map(function (key) {
+      return '<tr><td>' + escapeHtml(key) + '</td><td>' + escapeHtml(tags[key]) + '</td></tr>';
+    }).join('') + '</table>';
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, function (character) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character];
+    });
+  }
+
+  function osmLink(id, type) {
+    var kind = type || 'node';
+    return '<a href="https://www.openstreetmap.org/' + kind + '/' + id + '" target="_blank" rel="noreferrer">' +
+      kind + '/' + id + '</a>';
+  }
+
+  function render() {
+    signLayer.clearLayers();
+
+    data.places.forEach(function (place) {
+      L.circleMarker([place.position.lat, place.position.lng], {
+        radius: 4, color: '#1565c0', weight: 2,
+        fillColor: place.isArea ? '#ffffff' : '#1565c0', fillOpacity: place.isArea ? .9 : .7
+      }).bindPopup('<b>' + escapeHtml(place.name || '(uden navn)') + '</b><br>place=' + escapeHtml(place.kind) +
+        (place.isArea ? '<br>Midte af byareal (ingen bynode)' : '') +
+        '<br>' + osmLink(place.id, place.isArea ? 'way' : 'node')).addTo(signLayer);
+    });
+
+    data.signs.forEach(function (sign) {
+      var known = sign.entryHeading !== null && sign.entryHeading !== undefined;
+      var color = known ? '#1b5e20' : '#ef6c00';
+      L.circleMarker([sign.position.lat, sign.position.lng], {
+        radius: 7, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1
+      }).bindPopup(
+        '<b>' + escapeHtml(sign.name || '(uden navn)') + '</b><br>' +
+        (known
+          ? 'Retning ind i byen: ' + Math.round(sign.entryHeading) + '°'
+          : '<span style="color:#b71c1c">Ukendt retning – ingen bynode fundet</span>') +
+        (sign.place ? '<br>Matchet by: ' + escapeHtml(sign.place.name || '(uden navn)') +
+          ' (' + Math.round(C.distance(sign.position, sign.place.position)) + ' m' +
+          (sign.place.isArea ? ', arealmidte' : '') + ')' : '') +
+        (sign.genericBoundary ? '<br><span class="muted">Generisk byzonenode (indkørsel den ene vej, ophør den anden)</span>' : '') +
+        '<br>' + osmLink(sign.id) + tagTable(sign.tags)
+      ).addTo(signLayer);
+
+      if (known) {
+        var tip = C.destination(sign.position, 90, sign.entryHeading);
+        L.polyline([[sign.position.lat, sign.position.lng], [tip.lat, tip.lng]],
+          { color: color, weight: 2, opacity: .85 }).addTo(signLayer);
+        L.marker([tip.lat, tip.lng], {
+          interactive: false,
+          icon: L.divIcon({
+            className: '', iconSize: [19, 19], iconAnchor: [9, 9],
+            html: '<div class="arrow-icon" style="transform: rotate(' + sign.entryHeading + 'deg)">&#8593;</div>'
+          })
+        }).addTo(signLayer);
+      }
+      if (sign.place) {
+        L.polyline([[sign.position.lat, sign.position.lng], [sign.place.position.lat, sign.place.position.lng]],
+          { color: '#1565c0', weight: 1, opacity: .35, dashArray: '4 4' }).addTo(signLayer);
+      }
+    });
+
+    data.dropped.forEach(function (sign) {
+      L.circleMarker([sign.position.lat, sign.position.lng], {
+        radius: 6, color: '#fff', weight: 2, fillColor: '#9e9e9e', fillOpacity: 1
+      }).bindPopup('<b>' + escapeHtml(sign.name || '(uden navn)') + '</b><br>' +
+        'Kasseret: kun skilt med streg over<br>' + osmLink(sign.id) + tagTable(sign.tags)).addTo(signLayer);
+    });
+
+    var unknown = data.signs.filter(function (sign) {
+      return sign.entryHeading === null || sign.entryHeading === undefined;
+    }).length;
+    element('stat-kept').textContent = data.signs.length;
+    element('stat-unknown').textContent = unknown;
+    element('stat-dropped').textContent = data.dropped.length;
+    element('stat-places').textContent = data.places.length;
+    element('stat-areas').textContent = data.places.filter(function (place) { return place.isArea; }).length;
+  }
+
+  element('load').addEventListener('click', function () {
+    var bounds = map.getBounds();
+    var box = {
+      south: bounds.getSouth(), west: bounds.getWest(),
+      north: bounds.getNorth(), east: bounds.getEast()
+    };
+    var area = (box.north - box.south) * (box.east - box.west);
+    if (area > 0.5) {
+      loadStatus.innerHTML = '<span class="error">Zoom ind – udsnittet er for stort til én forespørgsel.</span>';
+      return;
+    }
+    var button = element('load');
+    button.disabled = true;
+    loadStatus.textContent = 'Henter fra Overpass …';
+    fetch(element('endpoint').value, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body: C.buildQuery(box)
+    }).then(function (response) {
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      return response.text();
+    }).then(function (body) {
+      data = C.parseResponse(body);
+      render();
+      loadStatus.textContent = 'Hentet ' + (data.signs.length + data.dropped.length) + ' skiltenoder for udsnittet.';
+    }).catch(function (error) {
+      var hint = openedFromDisk
+        ? ' Siden er åbnet fra disken – server den over http, se beskeden øverst.'
+        : ' Overpass afviser af og til forespørgsler når serveren er belastet; prøv igen eller vælg en anden server.';
+      loadStatus.innerHTML = '<span class="error">Fejl: ' + escapeHtml(error.message) + '</span>' +
+        '<span class="muted">' + hint + '</span>';
+    }).then(function () {
+      button.disabled = false;
+    });
+  });
+
+  ['alertDistance', 'approachCone', 'entryCone', 'unknownDirection'].forEach(function (id) {
+    element(id).addEventListener('change', function () {
+      alertLayer.clearLayers();
+      element('alerts').innerHTML = '';
+      if (routePoints.length >= 2) simStatus.textContent = 'Indstillinger ændret – kør ruten igen.';
+    });
+  });
+
+  element('draw').addEventListener('click', function () {
+    drawing = !drawing;
+    element('draw').classList.toggle('active', drawing);
+    element('draw').textContent = drawing ? 'Færdig med at tegne' : 'Tegn rute';
+    simStatus.textContent = drawing
+      ? 'Klik på kortet for at lægge punkter i køreretningen.'
+      : (routePoints.length >= 2 ? routePoints.length + ' punkter tegnet.' : 'Ingen rute tegnet.');
+  });
+
+  map.on('click', function (event) {
+    if (!drawing) return;
+    routePoints.push({ lat: event.latlng.lat, lng: event.latlng.lng });
+    drawRoute();
+    simStatus.textContent = routePoints.length + ' punkter tegnet.';
+    element('runForward').disabled = routePoints.length < 2;
+    element('runBackward').disabled = routePoints.length < 2;
+  });
+
+  function drawRoute() {
+    routeLayer.clearLayers();
+    if (routePoints.length === 0) return;
+    routeLine = L.polyline(routePoints.map(function (point) { return [point.lat, point.lng]; }),
+      { color: '#6a1b9a', weight: 3, opacity: .8 }).addTo(routeLayer);
+    routePoints.forEach(function (point) {
+      L.circleMarker([point.lat, point.lng], {
+        radius: 3, color: '#6a1b9a', fillColor: '#6a1b9a', fillOpacity: 1, weight: 1
+      }).addTo(routeLayer);
+    });
+  }
+
+  element('clearRoute').addEventListener('click', function () {
+    routePoints = [];
+    routeLayer.clearLayers();
+    alertLayer.clearLayers();
+    element('alerts').innerHTML = '';
+    element('runForward').disabled = true;
+    element('runBackward').disabled = true;
+    simStatus.textContent = 'Ingen rute tegnet.';
+  });
+
+  function run(reversed) {
+    if (routePoints.length < 2) return;
+    var points = reversed ? routePoints.slice().reverse() : routePoints.slice();
+    var alerts = C.simulateRide(points, data.signs, config());
+    alertLayer.clearLayers();
+    var list = element('alerts');
+    list.innerHTML = '';
+    alerts.forEach(function (alert) {
+      L.marker([alert.position.lat, alert.position.lng], {
+        icon: L.divIcon({
+          className: '', iconSize: [22, 22], iconAnchor: [11, 11],
+          html: '<div class="alert-icon">&#128276;</div>'
+        })
+      }).bindPopup('<b>' + escapeHtml(alert.sign.name || 'By forude') + '</b><br>' +
+        Math.round(alert.distanceMeters) + ' m før skiltet').addTo(alertLayer);
+
+      var item = document.createElement('li');
+      item.textContent = (alert.sign.name || 'By forude') + ' – ' + Math.round(alert.distanceMeters) + ' m før skiltet';
+      item.addEventListener('click', function () { map.panTo([alert.position.lat, alert.position.lng]); });
+      list.appendChild(item);
+    });
+    simStatus.textContent = (reversed ? 'Baglæns: ' : 'Fremad: ') +
+      (alerts.length === 0 ? 'ingen beskeder.' : alerts.length + ' besked(er).');
+  }
+
+  element('runForward').addEventListener('click', function () { run(false); });
+  element('runBackward').addEventListener('click', function () { run(true); });
+})();
+</script>
+</body>
+</html>

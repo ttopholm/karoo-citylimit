@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Byskilt</string>
+    <string name="extension_name">Byskilt</string>
+    <string name="settings_intro">Giver besked når du er ved at køre ind i en by. Kun byskiltet ved indkørsel tæller med — skiltet med streg over, som du passerer på vej ud, bliver ignoreret.</string>
+
+    <string name="alert_title_unnamed">By forude</string>
+    <string name="alert_detail">Byskilt om %1$d m</string>
+    <string name="alert_detail_with_speed">Byskilt om %1$d m · %2$s km/t</string>
+
+    <string name="setting_enabled">Besked</string>
+    <string name="setting_enabled_desc">Giv besked om byer du kører ind i</string>
+    <string name="setting_only_recording">Kun under optagelse</string>
+    <string name="setting_only_recording_desc">Vær stille indtil en tur bliver optaget</string>
+    <string name="setting_beep">Bip</string>
+    <string name="setting_beep_desc">Afspil en kort tone sammen med beskeden</string>
+    <string name="setting_distance">Afstand</string>
+    <string name="setting_distance_desc">Hvor lang tid før skiltet beskeden vises</string>
+    <string name="setting_duration">Varighed</string>
+    <string name="setting_duration_desc">Hvor længe beskeden bliver på skærmen</string>
+    <string name="setting_download_riding">Hent data undervejs</string>
+    <string name="setting_download_riding_desc">Hent skilte for området forude og for indlæste ruter</string>
+    <string name="setting_unknown_direction">Giv også besked ved ukendt retning</string>
+    <string name="setting_unknown_direction_desc">For byskilte hvor retningen ind i byen ikke kunne bestemmes. Kan give besked om en by mens du kører ud af den.</string>
+
+    <string name="action_download_here">Hent skilte for dette område</string>
+    <string name="action_test_alert">Vis en testbesked</string>
+    <string name="action_clear_cache">Ryd hentede skilte</string>
+    <string name="action_open_settings">Byskilt-indstillinger</string>
+
+    <string name="status_cache">%1$d skilte gemt i %2$d områder</string>
+    <string name="status_updated">Sidst hentet: %1$s</string>
+    <string name="status_idle">Klar</string>
+    <string name="status_no_position">Venter på GPS-position</string>
+    <string name="status_downloading">Henter område %1$d af %2$d…</string>
+    <string name="status_done">Hentede %1$d skilte i %2$d områder</string>
+    <string name="status_failed">Hentning fejlede: %1$s</string>
+
+    <string name="meters_format">%1$d m</string>
+    <string name="seconds_format">%1$d s</string>
+
+    <string name="attribution">Skiltedata fra OpenStreetMap-bidragydere via Overpass API (ODbL)</string>
+</resources>

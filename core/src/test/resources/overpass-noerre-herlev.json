@@ -1,0 +1,391 @@
+{
+ "version": 0.6,
+ "generator": "Overpass API (trimmed for tests)",
+ "elements": [
+  {
+   "type": "node",
+   "id": 7125090384,
+   "lat": 55.8647178,
+   "lon": 12.2407865,
+   "tags": {
+    "name": "Uvelse",
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 2940209883,
+   "lat": 55.8772323,
+   "lon": 12.2639126,
+   "tags": {
+    "name": "Uvelse Enghave",
+    "place": "hamlet",
+    "population": "4"
+   }
+  },
+  {
+   "type": "node",
+   "id": 10292867722,
+   "lat": 55.9025827,
+   "lon": 12.2412664,
+   "tags": {
+    "name": "Freerslev",
+    "place": "hamlet",
+    "population": "87",
+    "wikidata": "Q136311995"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6152568691,
+   "lat": 55.8857062,
+   "lon": 12.268284,
+   "tags": {
+    "direction": "backward",
+    "name": "Nørre Herlev",
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 8693460106,
+   "lat": 55.8712442,
+   "lon": 12.2985309,
+   "tags": {
+    "name": "Kollerød",
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 8693460072,
+   "lat": 55.8753924,
+   "lon": 12.2998488,
+   "tags": {
+    "name": "Kollerød",
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 10294884685,
+   "lat": 55.8734377,
+   "lon": 12.3005228,
+   "tags": {
+    "name": "Kollerød",
+    "place": "hamlet",
+    "population": "134",
+    "wikidata": "Q2366199"
+   }
+  },
+  {
+   "type": "node",
+   "id": 10292867727,
+   "lat": 55.8889703,
+   "lon": 12.2740223,
+   "tags": {
+    "census": "2013",
+    "name": "Nørre Herlev",
+    "place": "village",
+    "population": "429",
+    "wikidata": "Q2382639",
+    "wikipedia": "da:Nørre Herlev"
+   }
+  },
+  {
+   "type": "node",
+   "id": 2669730909,
+   "lat": 55.8888146,
+   "lon": 12.2783865,
+   "tags": {
+    "direction": "backward",
+    "name": "Nørre Herlev",
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6369208477,
+   "lat": 55.8872001,
+   "lon": 12.2765744,
+   "tags": {
+    "direction": "forward",
+    "name": "Nørre Herlev",
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6371351384,
+   "lat": 55.8909104,
+   "lon": 12.2768885,
+   "tags": {
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 10292867726,
+   "lat": 55.8881903,
+   "lon": 12.2846135,
+   "tags": {
+    "census": "2013",
+    "name": "Brødeskov",
+    "place": "village",
+    "population": "221",
+    "wikidata": "Q3077146",
+    "wikipedia": "da:Brødeskov"
+   }
+  },
+  {
+   "type": "node",
+   "id": 2937709181,
+   "lat": 55.8955514,
+   "lon": 12.2797966,
+   "tags": {
+    "name": "Sandgrav",
+    "place": "hamlet",
+    "population": "10"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6369208480,
+   "lat": 55.8955018,
+   "lon": 12.2774175,
+   "tags": {
+    "direction": "backward",
+    "name": "Nørre Herlev",
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6372220178,
+   "lat": 55.865909,
+   "lon": 12.3232283,
+   "tags": {
+    "direction": "backward",
+    "name": "Lillerød",
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 11201492288,
+   "lat": 55.8562734,
+   "lon": 12.3351564,
+   "tags": {
+    "name": "Lynge Overdrev",
+    "place": "suburb"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6372220148,
+   "lat": 55.8579035,
+   "lon": 12.347344,
+   "tags": {
+    "direction": "backward",
+    "name": "Lillerød",
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6372220149,
+   "lat": 55.8579396,
+   "lon": 12.3473762,
+   "tags": {
+    "direction": "forward",
+    "name": "Lillerød",
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 2603507785,
+   "lat": 55.8707776,
+   "lon": 12.3556762,
+   "tags": {
+    "loc_name": "Allerød",
+    "name": "Lillerød",
+    "place": "town",
+    "population": "16878",
+    "population:date": "2018-01-01",
+    "source:population": "http://www.statistikbanken.dk/BY1",
+    "wikidata": "Q656234",
+    "wikipedia": "da:Lillerød"
+   }
+  },
+  {
+   "type": "node",
+   "id": 13526257533,
+   "lat": 55.8673383,
+   "lon": 12.3584632,
+   "tags": {
+    "name": "Allerød",
+    "place": "quarter"
+   }
+  },
+  {
+   "type": "node",
+   "id": 11201492286,
+   "lat": 55.8747022,
+   "lon": 12.3597482,
+   "tags": {
+    "name": "Horsemose",
+    "place": "quarter",
+    "wikidata": "Q129051311"
+   }
+  },
+  {
+   "type": "node",
+   "id": 2937715417,
+   "lat": 55.8911469,
+   "lon": 12.3292726,
+   "tags": {
+    "name": "Børstingerød",
+    "place": "hamlet",
+    "population": "24"
+   }
+  },
+  {
+   "type": "node",
+   "id": 11201492284,
+   "lat": 55.881797,
+   "lon": 12.3413685,
+   "tags": {
+    "name": "Enghaven",
+    "place": "quarter"
+   }
+  },
+  {
+   "type": "node",
+   "id": 2937715420,
+   "lat": 55.8959184,
+   "lon": 12.3292136,
+   "tags": {
+    "name": "Hammersholt",
+    "place": "hamlet",
+    "population": "112",
+    "wikidata": "Q125723417"
+   }
+  },
+  {
+   "type": "node",
+   "id": 2937715421,
+   "lat": 55.9000321,
+   "lon": 12.3352057,
+   "tags": {
+    "name": "Teglværkshuse",
+    "place": "hamlet",
+    "population": "13"
+   }
+  },
+  {
+   "type": "node",
+   "id": 8693460036,
+   "lat": 55.9007741,
+   "lon": 12.3446286,
+   "tags": {
+    "name": "Ny Hammersholt",
+    "traffic_sign": "city_limit",
+    "traffic_sign:direction": "backward"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4172840579,
+   "lat": 55.892252,
+   "lon": 12.351897,
+   "tags": {
+    "name": "Lillerød",
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 8693460112,
+   "lat": 55.8922116,
+   "lon": 12.3501718,
+   "tags": {
+    "name": "Lillerød",
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 2937717754,
+   "lat": 55.8968605,
+   "lon": 12.3500946,
+   "tags": {
+    "name": "Buskehuse",
+    "place": "hamlet",
+    "population": "11"
+   }
+  },
+  {
+   "type": "node",
+   "id": 8693460035,
+   "lat": 55.8929698,
+   "lon": 12.3504194,
+   "tags": {
+    "name": "Lillerød",
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 7896918991,
+   "lat": 55.9064682,
+   "lon": 12.2962958,
+   "tags": {
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 13355713322,
+   "lat": 55.9066487,
+   "lon": 12.2965978,
+   "tags": {
+    "name": "Favrholm",
+    "place": "suburb",
+    "website": "https://www.favrholm.dk"
+   }
+  },
+  {
+   "type": "node",
+   "id": 7896918993,
+   "lat": 55.9086856,
+   "lon": 12.3106198,
+   "tags": {
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 7896918994,
+   "lat": 55.9086292,
+   "lon": 12.3105287,
+   "tags": {
+    "traffic_sign": "city_limit"
+   }
+  },
+  {
+   "type": "node",
+   "id": 10292867725,
+   "lat": 55.9069173,
+   "lon": 12.332857,
+   "tags": {
+    "census": "2013",
+    "name": "Ny Hammersholt",
+    "place": "village",
+    "population": "1349",
+    "wikidata": "Q3117143",
+    "wikipedia": "da:Ny Hammersholt"
+   }
+  }
+ ]
+}

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">City Limit</string>
+    <string name="extension_name">City Limit</string>
+    <string name="settings_intro">Shows an alert when you are about to ride into a town. Only the town-entry sign counts — the crossed-out sign you pass on the way out is ignored.</string>
+
+    <string name="alert_title_unnamed">Town ahead</string>
+    <string name="alert_detail">Town limit in %1$d m</string>
+    <string name="alert_detail_with_speed">Town limit in %1$d m · %2$s km/h</string>
+
+    <string name="setting_enabled">Alerts</string>
+    <string name="setting_enabled_desc">Announce towns you are riding into</string>
+    <string name="setting_only_recording">Only while recording</string>
+    <string name="setting_only_recording_desc">Stay quiet until a ride is being recorded</string>
+    <string name="setting_beep">Beep</string>
+    <string name="setting_beep_desc">Play a short tone with the alert</string>
+    <string name="setting_distance">Alert distance</string>
+    <string name="setting_distance_desc">How far ahead of the sign the alert appears</string>
+    <string name="setting_duration">Alert duration</string>
+    <string name="setting_duration_desc">How long the alert stays on screen</string>
+    <string name="setting_download_riding">Download while riding</string>
+    <string name="setting_download_riding_desc">Fetch signs for the area ahead and for loaded routes</string>
+    <string name="setting_unknown_direction">Also alert when direction is unknown</string>
+    <string name="setting_unknown_direction_desc">For boundary signs where the direction into town could not be worked out. May announce a town as you leave it.</string>
+
+    <string name="action_download_here">Download signs for this area</string>
+    <string name="action_test_alert">Show a test alert</string>
+    <string name="action_clear_cache">Clear downloaded signs</string>
+    <string name="action_open_settings">City Limit settings</string>
+
+    <string name="status_cache">%1$d signs cached in %2$d areas</string>
+    <string name="status_updated">Last download: %1$s</string>
+    <string name="status_idle">Ready</string>
+    <string name="status_no_position">Waiting for a GPS position</string>
+    <string name="status_downloading">Downloading area %1$d of %2$d…</string>
+    <string name="status_done">Downloaded %1$d signs in %2$d areas</string>
+    <string name="status_failed">Download failed: %1$s</string>
+
+    <string name="meters_format">%1$d m</string>
+    <string name="seconds_format">%1$d s</string>
+
+    <string name="attribution">Sign data from OpenStreetMap contributors, via the Overpass API (ODbL)</string>
+</resources>
