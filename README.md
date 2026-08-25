@@ -150,14 +150,18 @@ site → Import an existing project*, pick this repository, and deploy. There is
 `tools/` directory is published and `/` redirects to the map. Every push to the default branch
 redeploys it.
 
-Hosted, the page queries Overpass through a same-origin proxy path (`/api/overpass`) declared in
-`netlify.toml`. Overpass serves server-to-server requests happily but answers the same query from a
+Hosted, the page reaches both the packs (`/api/packs/…`) and Overpass (`/api/overpass`) through
+functions on its own origin. The packs need it because GitHub redirects release downloads to a host
+that sends no CORS headers; Overpass needs it for a different reason. Overpass serves server-to-server requests happily but answers the same query from a
 browser with `406`, which then surfaces as a CORS error because the error response carries no CORS
 headers; going through the proxy means Overpass sees an ordinary server call. Served from localhost
 there is no proxy, so the page calls Overpass directly with `referrerPolicy: no-referrer`. GitHub Pages works just as well if you would rather not add a second service — say the
 word and the workflow for it is a few lines.
 
-* Pans to an area and downloads the same Overpass query the extension uses.
+* Reads the published region pack by default — the same data the Karoo carries — so checking an area
+  needs no Overpass at all. The pack loads once and stays in the browser, so panning is instant.
+  Switching the data source to *Overpass (live)* queries OpenStreetMap directly instead, which is the
+  way to see signs that have been mapped since the last pack was built.
 * Draws every town-entry sign with an arrow for the direction that counts as riding in, marks signs
   with no known direction in orange, and greys out nodes that were dropped for carrying only the
   crossed-out sign. Clicking a sign shows its OSM tags and which place node it was matched to.
