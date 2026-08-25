@@ -156,8 +156,19 @@ base64 < release.jks | tr -d '\n'
 
 On macOS, add `| pbcopy` to put it straight on the clipboard.
 
-Then set `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD` under Settings →
-Secrets and variables → Actions. Keep `release.jks` out of the repository and back it up: losing it
+Then add four secrets under Settings → Secrets and variables → Actions:
+
+| Secret | Value |
+| --- | --- |
+| `KEYSTORE_BASE64` | the single line printed above |
+| `KEYSTORE_PASSWORD` | the password you chose when creating the keystore |
+| `KEY_ALIAS` | the name of the key inside the keystore — `citylimit` above |
+| `KEY_PASSWORD` | the same password as `KEYSTORE_PASSWORD` |
+
+A keystore holds one or more named keys, each with its own password in principle. In practice
+`keytool` creates a PKCS12 keystore, where the store and key passwords have to match — it prints
+*"Different store and key passwords not supported for PKCS12 KeyStores"* if you try otherwise.
+`keytool -list -keystore release.jks` shows the alias of an existing keystore. Keep `release.jks` out of the repository and back it up: losing it
 means every install has to be removed before the next version can be installed. Without the secrets
 the workflow still builds, but signs with the debug key and warns that updates will not apply.
 
