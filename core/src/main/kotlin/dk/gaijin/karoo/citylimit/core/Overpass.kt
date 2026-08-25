@@ -93,6 +93,22 @@ object Overpass {
     }
 
     /**
+     * Rough importance of a place, used when a sign's name matches several places. A town's outlying
+     * hamlets often carry its name plus a qualifier - "Nykøbing Lyng" next to "Nykøbing Sjælland" -
+     * and the sign belongs to the main settlement.
+     */
+    private val PLACE_RANK = mapOf(
+        "city" to 6,
+        "town" to 5,
+        "village" to 4,
+        "suburb" to 3,
+        "borough" to 3,
+        "quarter" to 2,
+        "neighbourhood" to 2,
+        "hamlet" to 1,
+    )
+
+    /**
      * The place a sign belongs to.
      *
      * A sign that carries a name names its own town, so only a place with that name will do. Falling
@@ -101,6 +117,13 @@ object Overpass {
      * at neighbouring hamlets, and at a different one depending on which area was downloaded. No
      * direction at all is the honest answer there.
      *
+     * Signs and places do not always spell a name the same way. Spacing is ignored, so the sign
+     * "Vesterlyng" finds the hamlet "Vester Lyng". And signs drop the regional qualifier a place
+     * name carries: the sign into Nykøbing Sjælland reads "Nykøbing". A name that is a whole-word
+     * prefix of a place name therefore counts too, but only when it is unambiguous — "Nykøbing" also
+     * prefixes the hamlet "Nykøbing Lyng", so the most significant place wins, and a tie means no
+     * match rather than a guess.
+     *
      * An unnamed sign has nothing to match on, so the nearest place is the best available guess.
      * Mapped nodes win over area centres, since a node sits at the town centre while an area centre
      * is only the middle of its bounding box.
@@ -108,14 +131,48 @@ object Overpass {
     internal fun matchPlace(signPosition: LatLng, signName: String?, places: List<PlaceNode>): PlaceNode? {
         val normalized = signName?.trim()?.lowercase()
         if (!normalized.isNullOrEmpty()) {
-            return places
-                .filter { it.name?.trim()?.lowercase() == normalized }
-                .minByOrNull { signPosition.distanceTo(it.position) }
-                ?.takeIf { signPosition.distanceTo(it.position) <= MAX_NAMED_PLACE_DISTANCE_METERS }
+            val nearby = places.filter {
+                signPosition.distanceTo(it.position) <= MAX_NAMED_PLACE_DISTANCE_METERS
+            }
+            val spaced = normalized.replace(WHITESPACE, " ")
+            return exactMatch(signPosition, spaced, nearby) ?: qualifiedMatch(spaced, nearby)
         }
         val (nodes, areas) = places.partition { !it.isArea }
         return nearestWithin(signPosition, nodes) ?: nearestWithin(signPosition, areas)
     }
+
+    private fun exactMatch(signPosition: LatLng, name: String, places: List<PlaceNode>): PlaceNode? {
+        val compact = compact(name)
+        return places
+            .filter { compact(it.name) == compact }
+            .minByOrNull { signPosition.distanceTo(it.position) }
+    }
+
+    /** Name reduced to letters only, so "Vesterlyng" and "Vester Lyng" compare equal. */
+    private fun compact(name: String?): String? =
+        name?.trim()?.lowercase()?.replace(COMPACT_PATTERN, "")?.ifEmpty { null }
+
+    private val COMPACT_PATTERN = Regex("[\\s\\-]+")
+
+    /**
+     * Match a sign name against place names that only differ by a trailing qualifier, in either
+     * direction: sign "Nykøbing" against place "Nykøbing Sjælland", or sign "Ellinge Lyng" against
+     * place "Ellinge". Only the most significant candidate counts, and only when it stands alone.
+     */
+    private fun qualifiedMatch(name: String, places: List<PlaceNode>): PlaceNode? {
+        val candidates = places.filter { place ->
+            val placeName = place.name?.trim()?.lowercase() ?: return@filter false
+            placeName.startsWith("$name ") || name.startsWith("$placeName ")
+        }
+        if (candidates.isEmpty()) return null
+        val topRank = candidates.maxOf { rankOf(it) }
+        val best = candidates.filter { rankOf(it) == topRank }
+        return best.singleOrNull()
+    }
+
+    private fun rankOf(place: PlaceNode): Int = PLACE_RANK[place.kind.lowercase()] ?: 0
+
+    private val WHITESPACE = Regex("\\s+")
 
     private fun nearestWithin(signPosition: LatLng, places: List<PlaceNode>): PlaceNode? =
         places

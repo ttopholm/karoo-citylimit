@@ -226,6 +226,13 @@
     return { entry: entry, exit: exit, directional: directional };
   }
 
+  /* Groft mål for en bys betydning, brugt når et skiltenavn matcher flere byer. En bys satellitter
+     hedder ofte det samme plus en endelse - "Nykøbing Lyng" ved siden af "Nykøbing Sjælland" - og
+     skiltet hører til hovedbyen. */
+  var PLACE_RANK = {
+    city: 6, town: 5, village: 4, suburb: 3, borough: 3, quarter: 2, neighbourhood: 2, hamlet: 1
+  };
+
   /*
    * Byen et skilt hører til.
    *
@@ -234,24 +241,55 @@
    * i Odsherred, hvor ingen by har det navn, endte med at pege mod nabohuse, og mod en anden by alt
    * efter hvilket udsnit der var hentet. Ingen retning er det ærlige svar der.
    *
+   * Skilt og by staver ikke altid navnet ens. Mellemrum ignoreres, så skiltet "Vesterlyng" finder
+   * hamlet'en "Vester Lyng". Og skilte dropper den regionale endelse i bynavnet: skiltet ind til
+   * Nykøbing Sjælland siger blot
+   * "Nykøbing". Et navn der er et helt ords præfiks af et bynavn tæller derfor også med, men kun når
+   * det er entydigt - "Nykøbing" præfikser også hamlet'en "Nykøbing Lyng", så den mest betydelige by
+   * vinder, og står to lige, er svaret intet match frem for et gæt.
+   *
    * Et skilt uden navn har intet at matche på, så den nærmeste by er det bedste gæt. Mappede bynoder
    * vinder over arealmidter, fordi en node ligger i bymidten.
    */
   function matchPlace(position, signName, places) {
     var normalized = (signName || '').trim().toLowerCase();
     if (normalized) {
-      var named = places.filter(function (place) {
-        return (place.name || '').trim().toLowerCase() === normalized;
+      var nearby = places.filter(function (place) {
+        return distance(position, place.position) <= MAX_NAMED_PLACE_DISTANCE_METERS;
       });
-      var nearestNamed = nearest(position, named);
-      if (nearestNamed && distance(position, nearestNamed.position) <= MAX_NAMED_PLACE_DISTANCE_METERS) {
-        return nearestNamed;
-      }
-      return null;
+      var spaced = normalized.replace(/\s+/g, ' ');
+      return exactMatch(position, spaced, nearby) || qualifiedMatch(spaced, nearby);
     }
     var nodes = places.filter(function (place) { return !place.isArea; });
     var areas = places.filter(function (place) { return place.isArea; });
     return nearestWithin(position, nodes) || nearestWithin(position, areas);
+  }
+
+  function exactMatch(position, name, places) {
+    var compact = compactName(name);
+    return nearest(position, places.filter(function (place) {
+      return compactName(place.name) === compact;
+    }));
+  }
+
+  /** Navn reduceret til bogstaver, så "Vesterlyng" og "Vester Lyng" er ens. */
+  function compactName(name) {
+    return (name || '').trim().toLowerCase().replace(/[\s\-]+/g, '');
+  }
+
+  /* Matcher navne der kun adskiller sig ved en endelse, i begge retninger: skilt "Nykøbing" mod by
+     "Nykøbing Sjælland", eller skilt "Ellinge Lyng" mod by "Ellinge". */
+  function qualifiedMatch(name, places) {
+    var candidates = places.filter(function (place) {
+      var placeName = (place.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      if (!placeName) return false;
+      return placeName.indexOf(name + ' ') === 0 || name.indexOf(placeName + ' ') === 0;
+    });
+    if (candidates.length === 0) return null;
+    var rank = function (place) { return PLACE_RANK[(place.kind || '').toLowerCase()] || 0; };
+    var top = Math.max.apply(null, candidates.map(rank));
+    var best = candidates.filter(function (place) { return rank(place) === top; });
+    return best.length === 1 ? best[0] : null;
   }
 
   function nearestWithin(position, places) {

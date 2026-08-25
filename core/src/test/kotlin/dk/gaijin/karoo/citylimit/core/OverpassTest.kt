@@ -128,6 +128,67 @@ class OverpassTest {
     }
 
     @Test
+    fun `spacing in a name does not matter`() {
+        // Real case: the sign reads "Vesterlyng", the hamlet is mapped as "Vester Lyng".
+        val signPosition = LatLng(55.9300, 11.6400)
+        val places = listOf(
+            PlaceNode(10038782603, LatLng(55.9348, 11.6438), "Vester Lyng", "hamlet"),
+            PlaceNode(2512942163, LatLng(55.9312, 11.6967), "Øster Lyng", "village"),
+        )
+        assertEquals(10038782603L, Overpass.matchPlace(signPosition, "Vesterlyng", places)?.id)
+        assertEquals(10038782603L, Overpass.matchPlace(signPosition, "Vester  Lyng", places)?.id)
+    }
+
+    @Test
+    fun `a sign drops the town's regional qualifier`() {
+        // The sign into Nykøbing Sjælland reads "Nykøbing". The hamlet "Nykøbing Lyng" carries the
+        // same prefix, so the more significant place has to win.
+        val signPosition = LatLng(55.9140, 11.6530)
+        val places = listOf(
+            PlaceNode(21686563, LatLng(55.9233, 11.6690), "Nykøbing Sjælland", "village"),
+            PlaceNode(4607335659, LatLng(55.9416, 11.6782), "Nykøbing Lyng", "hamlet"),
+        )
+        assertEquals(21686563L, Overpass.matchPlace(signPosition, "Nykøbing", places)?.id)
+    }
+
+    @Test
+    fun `a qualifier match works in both directions`() {
+        val signPosition = LatLng(55.8800, 11.5400)
+        val places = listOf(PlaceNode(1, LatLng(55.8700, 11.5400), "Ellinge", "village"))
+        assertEquals(1L, Overpass.matchPlace(signPosition, "Ellinge Lyng", places)?.id)
+    }
+
+    @Test
+    fun `an exact name still beats a qualifier match`() {
+        val signPosition = LatLng(55.8700, 11.5500)
+        val places = listOf(
+            PlaceNode(1, LatLng(55.8600, 11.5300), "Hønsinge Lyng", "hamlet"),
+            PlaceNode(2, LatLng(55.8648, 11.5562), "Hønsinge", "hamlet"),
+        )
+        assertEquals(2L, Overpass.matchPlace(signPosition, "Hønsinge", places)?.id)
+    }
+
+    @Test
+    fun `an ambiguous qualifier match is no match`() {
+        // Three equally significant hamlets share the prefix, and they lie in different directions.
+        val signPosition = LatLng(55.8850, 11.5400)
+        val places = listOf(
+            PlaceNode(1, LatLng(55.8764, 11.5426), "Ellinge Lyng", "hamlet"),
+            PlaceNode(2, LatLng(55.8809, 11.5384), "Ellinge Kongepart", "hamlet"),
+            PlaceNode(3, LatLng(55.8983, 11.5618), "Ellinge Kohave", "hamlet"),
+        )
+        assertNull(Overpass.matchPlace(signPosition, "Ellinge", places))
+    }
+
+    @Test
+    fun `a qualifier match does not cross unrelated names`() {
+        val signPosition = LatLng(55.8850, 11.5400)
+        val places = listOf(PlaceNode(1, LatLng(55.8800, 11.5400), "Nykøbing Sjælland", "village"))
+        assertNull(Overpass.matchPlace(signPosition, "Nyk", places))
+        assertNull(Overpass.matchPlace(signPosition, "Lyngen", places))
+    }
+
+    @Test
     fun `a sign with an unknown direction raises no alert by default`() {
         val sign = CityLimitSign(id = 1, position = LatLng(55.8830, 11.5400), name = "Lyngen", entryHeading = null)
         val position = sign.position.destination(150.0, 0.0)

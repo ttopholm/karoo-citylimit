@@ -30,7 +30,11 @@ Town boundaries come from OpenStreetMap. Two things have to be true before you g
    raised.
 
    A sign that carries a name names its own town, so only a place with that name is accepted — if
-   none is mapped, the sign has no known direction and is skipped. Falling back to the nearest place
+   none is mapped, the sign has no known direction and is skipped. Names are compared ignoring
+   spacing, so the sign "Vesterlyng" finds the hamlet "Vester Lyng", and a sign may drop the
+   regional qualifier a place carries: "Nykøbing" matches "Nykøbing Sjælland". That last rule only
+   applies when it is unambiguous — "Nykøbing" also prefixes the hamlet "Nykøbing Lyng", so the more
+   significant place wins, and a tie between equals means no match rather than a guess. Falling back to the nearest place
    for a named sign points the arrow at whatever village happens to be closest: signs reading
    "Lyngen" in Odsherred, where no place of that name exists, ended up pointing at neighbouring
    hamlets, and at a different one depending on which area had been downloaded. Only a sign with no

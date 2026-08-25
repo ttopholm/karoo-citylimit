@@ -79,6 +79,25 @@ check('places are queried from a wider box than signs', (() => {
   });
 })());
 
+check('spacing in a name does not matter', C.matchPlace({lat:55.93,lng:11.64}, 'Vesterlyng', [
+  { id: 10038782603, position: {lat:55.9348,lng:11.6438}, name: 'Vester Lyng', kind: 'hamlet', isArea: false },
+  { id: 2512942163, position: {lat:55.9312,lng:11.6967}, name: 'Øster Lyng', kind: 'village', isArea: false },
+]).id === 10038782603);
+
+// Signs drop a town's regional qualifier: "Nykøbing" for Nykøbing Sjælland.
+check('qualifier match picks the significant place', C.matchPlace({lat:55.9140,lng:11.6530}, 'Nykøbing', [
+  { id: 21686563, position: {lat:55.9233,lng:11.6690}, name: 'Nykøbing Sjælland', kind: 'village', isArea: false },
+  { id: 4607335659, position: {lat:55.9416,lng:11.6782}, name: 'Nykøbing Lyng', kind: 'hamlet', isArea: false },
+]).id === 21686563);
+check('ambiguous qualifier match is no match', C.matchPlace({lat:55.8850,lng:11.5400}, 'Ellinge', [
+  { id: 1, position: {lat:55.8764,lng:11.5426}, name: 'Ellinge Lyng', kind: 'hamlet', isArea: false },
+  { id: 2, position: {lat:55.8809,lng:11.5384}, name: 'Ellinge Kongepart', kind: 'hamlet', isArea: false },
+]) === null);
+check('exact name beats a qualifier match', C.matchPlace({lat:55.8700,lng:11.5500}, 'Hønsinge', [
+  { id: 1, position: {lat:55.8600,lng:11.5300}, name: 'Hønsinge Lyng', kind: 'hamlet', isArea: false },
+  { id: 2, position: {lat:55.8648,lng:11.5562}, name: 'Hønsinge', kind: 'hamlet', isArea: false },
+]).id === 2);
+
 check('query collects place nodes, ways and relations', (q => q.includes('node(') && q.includes('way(') && q.includes('relation(') && q.includes('out center qt;'))(C.buildQuery({south:55.85,west:12.25,north:55.90,east:12.35})));
 
 // Areas as a fallback for towns without a place node, mirroring OverpassTest.
