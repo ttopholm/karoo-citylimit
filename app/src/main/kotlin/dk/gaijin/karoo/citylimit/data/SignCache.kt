@@ -40,6 +40,13 @@ class SignCache(private val file: File) {
     private val mutex = Mutex()
     private var cells: MutableMap<String, CachedCell>? = null
 
+    /**
+     * The settings screen and the extension service hold separate instances of this cache, so a
+     * region pack installed from the screen has to be picked up by the running extension. Reloading
+     * whenever the file has changed underneath us is enough, and costs one stat call per read.
+     */
+    private var loadedAt = 0L
+
     suspend fun signsNear(position: LatLng, radiusMeters: Double): List<CityLimitSign> =
         cells().values
             .asSequence()
@@ -56,6 +63,20 @@ class SignCache(private val file: File) {
         mutex.withLock {
             val loaded = loadLocked()
             loaded[key.id] = CachedCell(fetchedAt = now, signs = signs)
+            prune(loaded, now)
+            saveLocked(loaded)
+        }
+    }
+
+    /**
+     * Store many cells at once, as when a downloaded region pack is unpacked. Written in one go so a
+     * pack of a few thousand cells does not rewrite the file once per cell.
+     */
+    suspend fun putAll(cells: Map<String, List<CityLimitSign>>, now: Long) {
+        if (cells.isEmpty()) return
+        mutex.withLock {
+            val loaded = loadLocked()
+            cells.forEach { (id, signs) -> loaded[id] = CachedCell(fetchedAt = now, signs = signs) }
             prune(loaded, now)
             saveLocked(loaded)
         }
@@ -82,7 +103,9 @@ class SignCache(private val file: File) {
     private suspend fun cells(): Map<String, CachedCell> = mutex.withLock { loadLocked().toMap() }
 
     private suspend fun loadLocked(): MutableMap<String, CachedCell> {
-        cells?.let { return it }
+        val modified = withContext(Dispatchers.IO) { runCatching { file.lastModified() }.getOrDefault(0L) }
+        cells?.let { if (modified == loadedAt) return it }
+        loadedAt = modified
         val loaded = withContext(Dispatchers.IO) {
             runCatching {
                 if (!file.exists()) return@runCatching LinkedHashMap<String, CachedCell>()
@@ -111,6 +134,7 @@ class SignCache(private val file: File) {
                     file.writeText(temp.readText())
                     temp.delete()
                 }
+                loadedAt = file.lastModified()
             }.onFailure { Timber.w(it, "Could not write sign cache") }
         }
     }
@@ -128,6 +152,10 @@ class SignCache(private val file: File) {
         const val FORMAT_VERSION = 1
         const val FILE_NAME = "sign-cache.json"
         val MAX_AGE_MILLIS = 180L * 24 * 60 * 60 * 1000
-        const val MAX_CELLS = 600
+        /**
+         * Enough for a downloaded country and then some: Denmark is roughly 1,300 cells, and a
+         * cell holds a handful of signs.
+         */
+        const val MAX_CELLS = 8_000
     }
 }

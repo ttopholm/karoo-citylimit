@@ -5,6 +5,9 @@ import dk.gaijin.karoo.citylimit.core.LatLng
 import dk.gaijin.karoo.citylimit.data.CacheStats
 import dk.gaijin.karoo.citylimit.data.CityLimitSettings
 import dk.gaijin.karoo.citylimit.data.DownloadStatus
+import dk.gaijin.karoo.citylimit.data.PackRepository
+import dk.gaijin.karoo.citylimit.data.PackStatus
+import dk.gaijin.karoo.citylimit.data.RegionPack
 import dk.gaijin.karoo.citylimit.data.SettingsStore
 import dk.gaijin.karoo.citylimit.data.SignRepository
 import dk.gaijin.karoo.citylimit.extension.consumerFlow
@@ -26,6 +29,7 @@ import kotlinx.coroutines.launch
 class SettingsViewModel(
     private val settingsStore: SettingsStore,
     private val repository: SignRepository,
+    private val packs: PackRepository,
     private val karooSystem: KarooSystemService,
     private val scope: CoroutineScope,
 ) {
@@ -43,6 +47,9 @@ class SettingsViewModel(
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
 
+    val regions: StateFlow<List<RegionPack>> = packs.catalog
+    val packStatus: StateFlow<PackStatus> = packs.status
+
     private var locationJob: Job? = null
 
     fun onKarooConnected(connected: Boolean) {
@@ -58,6 +65,19 @@ class SettingsViewModel(
 
     suspend fun refreshStats() {
         _stats.value = repository.stats()
+    }
+
+    /** Look up which regions can be downloaded in one go. */
+    fun loadRegions() {
+        scope.launch { packs.loadCatalog() }
+    }
+
+    /** Download a whole region, so the ride needs no connection at all. */
+    fun installRegion(region: RegionPack) {
+        scope.launch {
+            packs.install(region)
+            refreshStats()
+        }
     }
 
     fun setEnabled(value: Boolean) = scope.launch { settingsStore.setEnabled(value) }

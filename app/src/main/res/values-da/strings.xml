@@ -36,6 +36,17 @@
     <string name="status_done">Hentede %1$d skilte i %2$d områder</string>
     <string name="status_failed">Hentning fejlede: %1$s</string>
 
+    <string name="regions_title">Hent et område</string>
+    <string name="regions_desc">Lægger et helt land på enheden, så der ikke skal bruges forbindelse undervejs. Gør det på WiFi.</string>
+    <string name="regions_size">%1$d skilte · %2$d kB</string>
+    <string name="regions_download">Hent</string>
+    <string name="regions_loading">Slår tilgængelige områder op…</string>
+    <string name="regions_progress">Henter %1$s: del %2$d af %3$d…</string>
+    <string name="regions_installed">%1$s hentet: %2$d skilte</string>
+    <string name="regions_failed">Hentning af område fejlede: %1$s</string>
+    <string name="regions_none">Ingen områder tilgængelige. Kræver forbindelse for at slå dem op.</string>
+    <string name="regions_retry">Slå områder op igen</string>
+
     <string name="meters_format">%1$d m</string>
     <string name="seconds_format">%1$d s</string>
 

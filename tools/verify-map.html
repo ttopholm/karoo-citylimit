@@ -434,6 +434,14 @@
     return alerts;
   }
 
+  /* Samme gitter som udvidelsen bruger til at hente og cache i bidder: ca. 5,5 x 6 km. */
+  var CELL_LAT_STEP = 0.05;
+  var CELL_LNG_STEP = 0.10;
+
+  function cellIdFor(position) {
+    return Math.floor(position.lat / CELL_LAT_STEP) + '/' + Math.floor(position.lng / CELL_LNG_STEP);
+  }
+
   function buildQuery(bounds, timeoutSeconds) {
     var format = function (b) {
       return [b.south, b.west, b.north, b.east].map(function (v) { return v.toFixed(6); }).join(',');
@@ -469,6 +477,11 @@
     createDetector: createDetector,
     simulateRide: simulateRide,
     buildQuery: buildQuery,
+    cellIdFor: cellIdFor,
+    OVERPASS_VALUE_REGEX: OVERPASS_VALUE_REGEX,
+    PLACE_REGEX: PLACE_REGEX,
+    CELL_LAT_STEP: CELL_LAT_STEP,
+    CELL_LNG_STEP: CELL_LNG_STEP,
     DEFAULT_CONFIG: DEFAULT_CONFIG
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

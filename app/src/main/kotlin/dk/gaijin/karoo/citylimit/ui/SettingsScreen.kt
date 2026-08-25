@@ -26,6 +26,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dk.gaijin.karoo.citylimit.R
 import dk.gaijin.karoo.citylimit.data.CityLimitSettings
 import dk.gaijin.karoo.citylimit.data.DownloadStatus
+import dk.gaijin.karoo.citylimit.data.PackStatus
+import dk.gaijin.karoo.citylimit.data.RegionPack
 import java.text.DateFormat
 import java.util.Date
 
@@ -35,6 +37,8 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val status by viewModel.downloadStatus.collectAsStateWithLifecycle()
     val position by viewModel.position.collectAsStateWithLifecycle()
+    val regions by viewModel.regions.collectAsStateWithLifecycle()
+    val packStatus by viewModel.packStatus.collectAsStateWithLifecycle()
     val testDetail = stringResource(R.string.alert_detail, settings.alertDistanceMeters)
 
     Column(
@@ -114,6 +118,13 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             onCheckedChange = viewModel::setAlertWhenDirectionUnknown,
         )
 
+        RegionSection(
+            regions = regions,
+            status = packStatus,
+            onInstall = viewModel::installRegion,
+            onRetry = viewModel::loadRegions,
+        )
+
         Button(
             onClick = viewModel::downloadHere,
             enabled = position != null,
@@ -142,6 +153,68 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 .fillMaxWidth()
                 .padding(vertical = 8.dp),
         )
+    }
+}
+
+@Composable
+private fun RegionSection(
+    regions: List<RegionPack>,
+    status: PackStatus,
+    onInstall: (RegionPack) -> Unit,
+    onRetry: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        HorizontalDivider()
+        Text(
+            text = stringResource(R.string.regions_title),
+            style = androidx.compose.material3.MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        Text(
+            text = stringResource(R.string.regions_desc),
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+        )
+
+        val busy = status is PackStatus.Downloading || status is PackStatus.LoadingCatalog
+        regions.forEach { region ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = region.name, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = stringResource(R.string.regions_size, region.signs, region.bytes / 1024),
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Button(onClick = { onInstall(region) }, enabled = !busy) {
+                    Text(stringResource(R.string.regions_download))
+                }
+            }
+        }
+
+        Text(
+            text = when (status) {
+                PackStatus.Idle ->
+                    if (regions.isEmpty()) stringResource(R.string.regions_none) else ""
+                PackStatus.LoadingCatalog -> stringResource(R.string.regions_loading)
+                is PackStatus.Downloading ->
+                    stringResource(R.string.regions_progress, status.region, status.completed, status.total)
+                is PackStatus.Installed ->
+                    stringResource(R.string.regions_installed, status.region, status.signs)
+                is PackStatus.Failed -> stringResource(R.string.regions_failed, status.message)
+            },
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        if (regions.isEmpty() && status !is PackStatus.LoadingCatalog) {
+            OutlinedButton(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.regions_retry))
+            }
+        }
     }
 }
 
