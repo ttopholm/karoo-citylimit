@@ -47,6 +47,11 @@
     <string name="regions_none">No regions available. Needs a connection to look them up.</string>
     <string name="regions_retry">Look for regions again</string>
 
+    <string name="test_alert_sent">Sent. The alert itself belongs to the ride screen, so outside a ride it only shows as a notification in the Control Center.</string>
+    <string name="test_alert_not_connected">The Karoo system did not accept it. Check that City Limit is enabled under Settings, Extensions.</string>
+    <string name="status_karoo_connected">Karoo system: connected</string>
+    <string name="status_karoo_disconnected">Karoo system: not connected</string>
+
     <string name="meters_format">%1$d m</string>
     <string name="seconds_format">%1$d s</string>
 

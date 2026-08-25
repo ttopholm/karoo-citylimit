@@ -40,6 +40,9 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
     val regions by viewModel.regions.collectAsStateWithLifecycle()
     val packStatus by viewModel.packStatus.collectAsStateWithLifecycle()
     val testDetail = stringResource(R.string.alert_detail, settings.alertDistanceMeters)
+    val testNotification = stringResource(R.string.action_test_alert)
+    val testAlert by viewModel.testAlert.collectAsStateWithLifecycle()
+    val connected by viewModel.connected.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -63,6 +66,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             newestFetchAt = stats.newestFetchAt,
             status = status,
             hasPosition = position != null,
+            connected = connected,
         )
 
         SettingSwitch(
@@ -133,10 +137,19 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             Text(stringResource(R.string.action_download_here))
         }
         OutlinedButton(
-            onClick = { viewModel.showTestAlert(testDetail) },
+            onClick = { viewModel.showTestAlert(testDetail, testNotification) },
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.action_test_alert))
+        }
+        testAlert?.let { outcome ->
+            Text(
+                text = when (outcome) {
+                    SettingsViewModel.TestAlert.SENT -> stringResource(R.string.test_alert_sent)
+                    SettingsViewModel.TestAlert.NOT_CONNECTED -> stringResource(R.string.test_alert_not_connected)
+                },
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+            )
         }
         OutlinedButton(
             onClick = viewModel::clearCache,
@@ -225,6 +238,7 @@ private fun StatusCard(
     newestFetchAt: Long?,
     status: DownloadStatus,
     hasPosition: Boolean,
+    connected: Boolean,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -234,6 +248,14 @@ private fun StatusCard(
             Text(
                 text = stringResource(R.string.status_cache, signCount, cellCount),
                 style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = if (connected) {
+                    stringResource(R.string.status_karoo_connected)
+                } else {
+                    stringResource(R.string.status_karoo_disconnected)
+                },
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
             )
             newestFetchAt?.let {
                 Text(

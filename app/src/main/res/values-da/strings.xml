@@ -47,6 +47,11 @@
     <string name="regions_none">Ingen områder tilgængelige. Kræver forbindelse for at slå dem op.</string>
     <string name="regions_retry">Slå områder op igen</string>
 
+    <string name="test_alert_sent">Sendt. Selve beskeden hører til turskærmen, så uden for en tur ses den kun som en notifikation i kontrolcenteret.</string>
+    <string name="test_alert_not_connected">Karoo-systemet tog ikke imod den. Tjek at City Limit er slået til under Indstillinger, Extensions.</string>
+    <string name="status_karoo_connected">Karoo-systemet: forbundet</string>
+    <string name="status_karoo_disconnected">Karoo-systemet: ikke forbundet</string>
+
     <string name="meters_format">%1$d m</string>
     <string name="seconds_format">%1$d s</string>
 

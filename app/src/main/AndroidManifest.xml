@@ -2,6 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Region packs are downloaded straight from GitHub when the Karoo has Wi-Fi of its own;
+         without this the direct client fails and only the Karoo system's relay works. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application
         android:name="dk.gaijin.karoo.citylimit.CityLimitApplication"
         android:icon="@drawable/ic_city_limit"

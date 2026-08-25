@@ -14,6 +14,7 @@ import dk.gaijin.karoo.citylimit.extension.consumerFlow
 import io.hammerhead.karooext.KarooSystemService
 import io.hammerhead.karooext.models.InRideAlert
 import io.hammerhead.karooext.models.OnLocationChanged
+import io.hammerhead.karooext.models.SystemNotification
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,6 +50,12 @@ class SettingsViewModel(
 
     val regions: StateFlow<List<RegionPack>> = packs.catalog
     val packStatus: StateFlow<PackStatus> = packs.status
+
+    /** Outcome of the last test alert, so the button says what happened. */
+    enum class TestAlert { SENT, NOT_CONNECTED }
+
+    private val _testAlert = MutableStateFlow<TestAlert?>(null)
+    val testAlert: StateFlow<TestAlert?> = _testAlert.asStateFlow()
 
     private var locationJob: Job? = null
 
@@ -110,9 +117,15 @@ class SettingsViewModel(
         }
     }
 
-    /** Show what an alert looks like, so the rider can check colours and duration. */
-    fun showTestAlert(detail: String) {
-        karooSystem.dispatch(
+    /**
+     * Show what an alert looks like, so the rider can check colours and duration.
+     *
+     * The alert itself belongs to the ride screen, so pressing this outside a ride shows nothing
+     * there. A notification is sent alongside it, which the Control Center shows either way, and the
+     * screen reports whether the Karoo system accepted the dispatch at all.
+     */
+    fun showTestAlert(detail: String, notification: String) {
+        val delivered = karooSystem.dispatch(
             InRideAlert(
                 id = "citylimit-test",
                 icon = R.drawable.ic_city_limit,
@@ -123,5 +136,15 @@ class SettingsViewModel(
                 textColor = R.color.alert_text,
             ),
         )
+        if (delivered) {
+            karooSystem.dispatch(
+                SystemNotification(
+                    id = "citylimit-test",
+                    message = notification,
+                    subText = detail,
+                ),
+            )
+        }
+        _testAlert.value = if (delivered) TestAlert.SENT else TestAlert.NOT_CONNECTED
     }
 }
