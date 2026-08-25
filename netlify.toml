@@ -1,0 +1,20 @@
+# Publishes the verification map as a static site. Netlify needs no build step: the page is a
+# single self-contained HTML file that talks to Overpass from the browser.
+#
+# Set up once at netlify.com: Add new site → Import an existing project → pick this repository.
+# Everything below is picked up automatically, so no settings have to be filled in by hand.
+
+[build]
+  publish = "tools"
+  command = ""
+
+# The map is the only page worth serving, so make it the front page.
+[[redirects]]
+  from = "/"
+  to = "/verify-map.html"
+  status = 302
+
+[[headers]]
+  for = "/verify-map.html"
+  [headers.values]
+    Cache-Control = "public, max-age=300"

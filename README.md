@@ -100,6 +100,13 @@ python3 -m http.server 8000     # from the repository root
 Opening the file directly from disk does not work: the browser then sends `Origin: null`, which
 Overpass rejects (406), so no data can be downloaded. The page says so if you try.
 
+For a permanent URL — handy for checking an area from a phone — the page can be hosted as a static
+site. `netlify.toml` in the repository root configures that already: at netlify.com choose *Add new
+site → Import an existing project*, pick this repository, and deploy. There is no build step; the
+`tools/` directory is published and `/` redirects to the map. Every push to the default branch
+redeploys it. GitHub Pages works just as well if you would rather not add a second service — say the
+word and the workflow for it is a few lines.
+
 * Pans to an area and downloads the same Overpass query the extension uses.
 * Draws every town-entry sign with an arrow for the direction that counts as riding in, marks signs
   with no known direction in orange, and greys out nodes that were dropped for carrying only the
