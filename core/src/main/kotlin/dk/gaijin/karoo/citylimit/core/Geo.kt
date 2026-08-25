@@ -94,6 +94,16 @@ data class BoundingBox(
         north = min(90.0, north + latDegrees),
         east = min(180.0, east + lngDegrees),
     )
+
+    /**
+     * Grow the box by roughly [meters] in every direction.
+     */
+    fun expandMeters(meters: Double): BoundingBox {
+        val midLatitude = (south + north) / 2
+        val latDegrees = meters / 111_320.0
+        val lngDegrees = meters / max(1.0, 111_320.0 * cos(Math.toRadians(midLatitude)))
+        return expand(latDegrees, lngDegrees)
+    }
 }
 
 /**

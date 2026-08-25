@@ -24,12 +24,25 @@ Town boundaries come from OpenStreetMap. Two things have to be true before you g
    `DE:311`, `SE:E6`, `city_limit=end`, … — are dropped while parsing. In Denmark most boundaries
    are mapped as a single `traffic_sign=city_limit` node that is an entry sign in one direction and
    an exit sign in the other, so a second check is needed.
-2. **You are riding into the town, not out of it.** Each sign is matched to the `place` of its town
-   — by name when the sign carries one, otherwise the nearest place. Towns mapped only as an area
-   count too: the centre of the area is used when no `place` node exists, and a mapped node wins
-   over an area centre for a sign with no name. The bearing from the sign towards the town centre is
-   the direction a rider enters in, and your heading has to be within 80° of it. Riding out of town
-   points the other way, so no alert is raised.
+2. **You are riding into the town, not out of it.** Each sign is matched to the `place` of its town,
+   and the bearing from the sign towards that town centre is the direction a rider enters in; your
+   heading has to be within 80° of it. Riding out of town points the other way, so no alert is
+   raised.
+
+   A sign that carries a name names its own town, so only a place with that name is accepted — if
+   none is mapped, the sign has no known direction and is skipped. Names are compared ignoring
+   spacing, so the sign "Vesterlyng" finds the hamlet "Vester Lyng", and a sign may drop the
+   regional qualifier a place carries: "Nykøbing" matches "Nykøbing Sjælland". That last rule only
+   applies when it is unambiguous — "Nykøbing" also prefixes the hamlet "Nykøbing Lyng", so the more
+   significant place wins, and a tie between equals means no match rather than a guess. Falling back to the nearest place
+   for a named sign points the arrow at whatever village happens to be closest: signs reading
+   "Lyngen" in Odsherred, where no place of that name exists, ended up pointing at neighbouring
+   hamlets, and at a different one depending on which area had been downloaded. Only a sign with no
+   name at all falls back to the nearest place, preferring a mapped node over the centre of an area.
+
+   Places are collected from 5 km beyond the area the signs come from, so a sign near the edge can
+   still find the town it names, and the same sign always resolves the same way regardless of which
+   cell it was looked up from.
 
 On top of that the sign has to lie ahead of you (within 55° of your heading) and inside the alert
 distance, and each town is only announced once per ten minutes.

@@ -82,16 +82,117 @@ class OverpassTest {
     }
 
     @Test
-    fun `query contains the bounding box and every filter`() {
+    fun `query asks for signs in the box and places around it`() {
         val query = Overpass.query(BoundingBox(55.85, 12.25, 55.90, 12.35))
-        assertTrue(query.contains("55.850000,12.250000,55.900000,12.350000"))
-        assertTrue(query.contains("traffic_sign"))
         assertTrue(query.contains("[out:json]"))
-        // Places are collected as nodes, ways and relations so towns mapped only as an area count.
-        assertTrue(query.contains("""node(55.850000,12.250000,55.900000,12.350000)["place"~"""".trimMargin()))
-        assertTrue(query.contains("""way(55.850000,12.250000,55.900000,12.350000)["place"~"""".trimMargin()))
-        assertTrue(query.contains("""relation(55.850000,12.250000,55.900000,12.350000)["place"~"""".trimMargin()))
         assertTrue(query.contains("out center qt;"))
+
+        // Signs come from the box itself.
+        assertTrue(query.contains("node(55.850000,12.250000,55.900000,12.350000)[~"))
+
+        // Places are collected from a wider area, as nodes, ways and relations, so a sign near the
+        // edge can still find the town it names no matter which cell it is looked up from.
+        val placeLines = query.lines().filter { it.contains("\"place\"") }
+        assertEquals(3, placeLines.size)
+        assertTrue(placeLines.any { it.trim().startsWith("node(") })
+        assertTrue(placeLines.any { it.trim().startsWith("way(") })
+        assertTrue(placeLines.any { it.trim().startsWith("relation(") })
+        placeLines.forEach { line ->
+            val box = line.substringAfter('(').substringBefore(')').split(',').map { it.toDouble() }
+            assertTrue("place box should reach south of the sign box", box[0] < 55.85)
+            assertTrue("place box should reach west of the sign box", box[1] < 12.25)
+            assertTrue("place box should reach north of the sign box", box[2] > 55.90)
+            assertTrue("place box should reach east of the sign box", box[3] > 12.35)
+        }
+    }
+
+    @Test
+    fun `a named sign without a matching place has no direction`() {
+        // Real case from Odsherred: signs reading "Lyngen", where no place of that name is mapped.
+        // Matching them to the nearest hamlet pointed the arrow at a neighbouring village - and at a
+        // different one depending on which area had been downloaded.
+        val body = """
+            {"elements":[
+              {"type":"node","id":6348603353,"lat":55.8830000,"lon":11.5400000,
+               "tags":{"traffic_sign":"city_limit","name":"Lyngen"}},
+              {"type":"node","id":10,"lat":55.8809000,"lon":11.5384000,
+               "tags":{"name":"Ellinge Kongepart","place":"hamlet"}},
+              {"type":"node","id":11,"lat":55.8764000,"lon":11.5426000,
+               "tags":{"name":"Ellinge Lyng","place":"hamlet"}}
+            ]}
+        """.trimIndent()
+        val sign = Overpass.parseSigns(body).single()
+        assertEquals("Lyngen", sign.name)
+        assertNull("a named sign must not borrow a neighbour's direction", sign.entryHeading)
+        assertNull(sign.townId)
+    }
+
+    @Test
+    fun `spacing in a name does not matter`() {
+        // Real case: the sign reads "Vesterlyng", the hamlet is mapped as "Vester Lyng".
+        val signPosition = LatLng(55.9300, 11.6400)
+        val places = listOf(
+            PlaceNode(10038782603, LatLng(55.9348, 11.6438), "Vester Lyng", "hamlet"),
+            PlaceNode(2512942163, LatLng(55.9312, 11.6967), "Øster Lyng", "village"),
+        )
+        assertEquals(10038782603L, Overpass.matchPlace(signPosition, "Vesterlyng", places)?.id)
+        assertEquals(10038782603L, Overpass.matchPlace(signPosition, "Vester  Lyng", places)?.id)
+    }
+
+    @Test
+    fun `a sign drops the town's regional qualifier`() {
+        // The sign into Nykøbing Sjælland reads "Nykøbing". The hamlet "Nykøbing Lyng" carries the
+        // same prefix, so the more significant place has to win.
+        val signPosition = LatLng(55.9140, 11.6530)
+        val places = listOf(
+            PlaceNode(21686563, LatLng(55.9233, 11.6690), "Nykøbing Sjælland", "village"),
+            PlaceNode(4607335659, LatLng(55.9416, 11.6782), "Nykøbing Lyng", "hamlet"),
+        )
+        assertEquals(21686563L, Overpass.matchPlace(signPosition, "Nykøbing", places)?.id)
+    }
+
+    @Test
+    fun `a qualifier match works in both directions`() {
+        val signPosition = LatLng(55.8800, 11.5400)
+        val places = listOf(PlaceNode(1, LatLng(55.8700, 11.5400), "Ellinge", "village"))
+        assertEquals(1L, Overpass.matchPlace(signPosition, "Ellinge Lyng", places)?.id)
+    }
+
+    @Test
+    fun `an exact name still beats a qualifier match`() {
+        val signPosition = LatLng(55.8700, 11.5500)
+        val places = listOf(
+            PlaceNode(1, LatLng(55.8600, 11.5300), "Hønsinge Lyng", "hamlet"),
+            PlaceNode(2, LatLng(55.8648, 11.5562), "Hønsinge", "hamlet"),
+        )
+        assertEquals(2L, Overpass.matchPlace(signPosition, "Hønsinge", places)?.id)
+    }
+
+    @Test
+    fun `an ambiguous qualifier match is no match`() {
+        // Three equally significant hamlets share the prefix, and they lie in different directions.
+        val signPosition = LatLng(55.8850, 11.5400)
+        val places = listOf(
+            PlaceNode(1, LatLng(55.8764, 11.5426), "Ellinge Lyng", "hamlet"),
+            PlaceNode(2, LatLng(55.8809, 11.5384), "Ellinge Kongepart", "hamlet"),
+            PlaceNode(3, LatLng(55.8983, 11.5618), "Ellinge Kohave", "hamlet"),
+        )
+        assertNull(Overpass.matchPlace(signPosition, "Ellinge", places))
+    }
+
+    @Test
+    fun `a qualifier match does not cross unrelated names`() {
+        val signPosition = LatLng(55.8850, 11.5400)
+        val places = listOf(PlaceNode(1, LatLng(55.8800, 11.5400), "Nykøbing Sjælland", "village"))
+        assertNull(Overpass.matchPlace(signPosition, "Nyk", places))
+        assertNull(Overpass.matchPlace(signPosition, "Lyngen", places))
+    }
+
+    @Test
+    fun `a sign with an unknown direction raises no alert by default`() {
+        val sign = CityLimitSign(id = 1, position = LatLng(55.8830, 11.5400), name = "Lyngen", entryHeading = null)
+        val position = sign.position.destination(150.0, 0.0)
+        assertNull(ApproachDetector().update(position, heading = 180.0, signs = listOf(sign), nowMillis = 0))
     }
 
     @Test
