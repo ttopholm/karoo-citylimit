@@ -8,6 +8,28 @@
   publish = "tools"
   command = ""
 
+# Overpass answers server-to-server calls fine, but rejects the same request from a browser with
+# 406 - the browser-set Referer and Origin headers are enough to trip it. Proxying through Netlify
+# means the request reaches Overpass from a server, and the page talks to its own origin, so CORS
+# stops being involved at all.
+[[redirects]]
+  from = "/api/overpass"
+  to = "https://overpass-api.de/api/interpreter"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/overpass-kumi"
+  to = "https://overpass.kumi.systems/api/interpreter"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/overpass-coffee"
+  to = "https://overpass.private.coffee/api/interpreter"
+  status = 200
+  force = true
+
 # The map is the only page worth serving, so make it the front page.
 [[redirects]]
   from = "/"

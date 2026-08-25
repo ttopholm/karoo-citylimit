@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Byskilt – verifikationskort</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath fill='%23101010' d='M6,40 L6,26 L14,20 L22,26 L22,16 L30,16 L30,10 L34,10 L34,16 L42,16 L42,40 Z'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root { color-scheme: light; }
@@ -74,9 +75,9 @@
     </div>
     <label>Overpass-server
       <select id="endpoint">
-        <option value="https://overpass-api.de/api/interpreter">overpass-api.de</option>
-        <option value="https://overpass.kumi.systems/api/interpreter">overpass.kumi.systems</option>
-        <option value="https://overpass.private.coffee/api/interpreter">overpass.private.coffee</option>
+        <option value="overpass-api.de">overpass-api.de</option>
+        <option value="kumi">overpass.kumi.systems</option>
+        <option value="coffee">overpass.private.coffee</option>
       </select>
     </label>
     <div id="load-status" class="muted">Ingen data hentet endnu.</div>
@@ -455,6 +456,47 @@
 
   // Overpass rejects requests from a null origin, so a page opened straight from disk can never
   // download anything. Say so up front instead of letting it fail as a CORS error.
+  /*
+   * Overpass answers server-to-server requests fine but rejects the same query from a browser with
+   * 406 - the Referer and Origin the browser attaches are enough to trip it. When this page is
+   * hosted (Netlify), the request goes through a same-origin proxy path instead, so Overpass sees a
+   * plain server call and CORS never enters into it. Served from localhost there is no proxy, so it
+   * falls back to calling Overpass directly, without a referrer.
+   */
+  var SERVERS = {
+    'overpass-api.de': { proxy: '/api/overpass', direct: 'https://overpass-api.de/api/interpreter' },
+    'kumi': { proxy: '/api/overpass-kumi', direct: 'https://overpass.kumi.systems/api/interpreter' },
+    'coffee': { proxy: '/api/overpass-coffee', direct: 'https://overpass.private.coffee/api/interpreter' }
+  };
+  var hosted = location.protocol.indexOf('http') === 0 &&
+    location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
+
+  /** Ask the proxy first when hosted, and keep the direct call as a fallback. */
+  function requestQuery(server, query) {
+    var attempts = [];
+    if (hosted) attempts.push({ url: server.proxy, proxied: true });
+    attempts.push({ url: server.direct, proxied: false });
+
+    var lastError = null;
+    var next = function (index) {
+      if (index >= attempts.length) return Promise.reject(lastError || new Error('ingen server svarede'));
+      var attempt = attempts[index];
+      return fetch(attempt.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        body: query,
+        referrerPolicy: 'no-referrer'
+      }).then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status + (attempt.proxied ? ' (via proxy)' : ''));
+        return response.text();
+      }).catch(function (error) {
+        lastError = error;
+        return next(index + 1);
+      });
+    };
+    return next(0);
+  }
+
   var openedFromDisk = location.protocol === 'file:';
   if (openedFromDisk) {
     element('file-warning').hidden = false;
@@ -568,14 +610,7 @@
     var button = element('load');
     button.disabled = true;
     loadStatus.textContent = 'Henter fra Overpass …';
-    fetch(element('endpoint').value, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-      body: C.buildQuery(box)
-    }).then(function (response) {
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      return response.text();
-    }).then(function (body) {
+    requestQuery(SERVERS[element('endpoint').value], C.buildQuery(box)).then(function (body) {
       data = C.parseResponse(body);
       render();
       loadStatus.textContent = 'Hentet ' + (data.signs.length + data.dropped.length) + ' skiltenoder for udsnittet.';

@@ -104,7 +104,13 @@ For a permanent URL — handy for checking an area from a phone — the page can
 site. `netlify.toml` in the repository root configures that already: at netlify.com choose *Add new
 site → Import an existing project*, pick this repository, and deploy. There is no build step; the
 `tools/` directory is published and `/` redirects to the map. Every push to the default branch
-redeploys it. GitHub Pages works just as well if you would rather not add a second service — say the
+redeploys it.
+
+Hosted, the page queries Overpass through a same-origin proxy path (`/api/overpass`) declared in
+`netlify.toml`. Overpass serves server-to-server requests happily but answers the same query from a
+browser with `406`, which then surfaces as a CORS error because the error response carries no CORS
+headers; going through the proxy means Overpass sees an ordinary server call. Served from localhost
+there is no proxy, so the page calls Overpass directly with `referrerPolicy: no-referrer`. GitHub Pages works just as well if you would rather not add a second service — say the
 word and the workflow for it is a few lines.
 
 * Pans to an area and downloads the same Overpass query the extension uses.
