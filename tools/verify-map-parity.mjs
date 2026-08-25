@@ -25,7 +25,8 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'ok  ' : 'FAIL'} 
 
 check('signs parsed', signs.length === 18, `${signs.length}`);
 check('no dropped in fixture', dropped.length === 0, `${dropped.length}`);
-check('places parsed', places.length === 17, `${places.length}`);
+// The fixture now carries places from a wider area than the signs, matching what the code asks for.
+check('places parsed', places.length >= 100, `${places.length}`);
 check('all signs have a direction', signs.every(s => s.entryHeading !== null));
 
 // Same fixture nodes as the Kotlin ride simulation test.
@@ -55,6 +56,29 @@ check('forward/backward pair', (s => s.entry && s.exit && s.directional)(C.class
 check('bearing north', Math.abs(C.bearing({lat:55.9339,lng:12.3010},{lat:56.0,lng:12.3010})) < 0.5);
 check('distance matches Kotlin', Math.abs(C.distance({lat:55.9339,lng:12.3010},{lat:55.6761,lng:12.5683}) - 33180) < 200);
 check('bearing difference wraps', C.bearingDifference(350, 10) === 20);
+// A named sign must not borrow a neighbour's direction (the "Lyngen" case from Odsherred).
+const lyngen = C.parseResponse(JSON.stringify({ elements: [
+  { type:'node', id: 6348603353, lat: 55.883, lon: 11.54, tags: { traffic_sign: 'city_limit', name: 'Lyngen' } },
+  { type:'node', id: 10, lat: 55.8809, lon: 11.5384, tags: { name: 'Ellinge Kongepart', place: 'hamlet' } },
+  { type:'node', id: 11, lat: 55.8764, lon: 11.5426, tags: { name: 'Ellinge Lyng', place: 'hamlet' } },
+]}));
+check('named sign without a matching place has no direction',
+  lyngen.signs.length === 1 && lyngen.signs[0].entryHeading === null && lyngen.signs[0].townId === null);
+check('unnamed sign still falls back to the nearest place',
+  C.parseResponse(JSON.stringify({ elements: [
+    { type:'node', id: 1, lat: 55.883, lon: 11.54, tags: { traffic_sign: 'city_limit' } },
+    { type:'node', id: 10, lat: 55.8809, lon: 11.5384, tags: { name: 'Ellinge Kongepart', place: 'hamlet' } },
+  ]})).signs[0].entryHeading !== null);
+check('places are queried from a wider box than signs', (() => {
+  const q = C.buildQuery({ south: 55.85, west: 12.25, north: 55.90, east: 12.35 });
+  const placeLines = q.split('\n').filter(l => l.includes('"place"'));
+  if (placeLines.length !== 3) return false;
+  return placeLines.every(line => {
+    const box = line.slice(line.indexOf('(') + 1, line.indexOf(')')).split(',').map(Number);
+    return box[0] < 55.85 && box[1] < 12.25 && box[2] > 55.90 && box[3] > 12.35;
+  });
+})());
+
 check('query collects place nodes, ways and relations', (q => q.includes('node(') && q.includes('way(') && q.includes('relation(') && q.includes('out center qt;'))(C.buildQuery({south:55.85,west:12.25,north:55.90,east:12.35})));
 
 // Areas as a fallback for towns without a place node, mirroring OverpassTest.

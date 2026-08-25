@@ -188,6 +188,9 @@
   var MAX_NAMED_PLACE_DISTANCE_METERS = 15000;
   var MAX_NEAREST_PLACE_DISTANCE_METERS = 3000;
   var MIN_PLACE_DISTANCE_METERS = 25;
+  /* Byer hentes fra et bredere område end skiltene, så et skilt nær kanten stadig kan finde den by
+     det navngiver - ellers afhænger svaret af hvilket udsnit der blev hentet. */
+  var PLACE_SEARCH_MARGIN_METERS = 5000;
 
   function splitCodes(value) {
     return String(value).split(';')
@@ -224,9 +227,15 @@
   }
 
   /*
-   * Byen et skilt hører til: den by skiltet navngiver, hvis navnet er mappet i nærheden, ellers den
-   * nærmeste by. En mappet bynode vinder over midten af et byareal, fordi noden ligger i bymidten,
-   * mens arealets centrum kun er midten af dets omsluttende rektangel.
+   * Byen et skilt hører til.
+   *
+   * Et skilt med navn navngiver sin egen by, så kun en by med samme navn duer. Faldt man tilbage til
+   * den nærmeste by, ville pilen pege på hvilken som helst nabolandsby - skilte med teksten "Lyngen"
+   * i Odsherred, hvor ingen by har det navn, endte med at pege mod nabohuse, og mod en anden by alt
+   * efter hvilket udsnit der var hentet. Ingen retning er det ærlige svar der.
+   *
+   * Et skilt uden navn har intet at matche på, så den nærmeste by er det bedste gæt. Mappede bynoder
+   * vinder over arealmidter, fordi en node ligger i bymidten.
    */
   function matchPlace(position, signName, places) {
     var normalized = (signName || '').trim().toLowerCase();
@@ -238,6 +247,7 @@
       if (nearestNamed && distance(position, nearestNamed.position) <= MAX_NAMED_PLACE_DISTANCE_METERS) {
         return nearestNamed;
       }
+      return null;
     }
     var nodes = places.filter(function (place) { return !place.isArea; });
     var areas = places.filter(function (place) { return place.isArea; });
@@ -387,14 +397,23 @@
   }
 
   function buildQuery(bounds, timeoutSeconds) {
-    var box = [bounds.south, bounds.west, bounds.north, bounds.east]
-      .map(function (value) { return value.toFixed(6); }).join(',');
+    var format = function (b) {
+      return [b.south, b.west, b.north, b.east].map(function (v) { return v.toFixed(6); }).join(',');
+    };
+    var signBox = format(bounds);
+    var midLatitude = (bounds.south + bounds.north) / 2;
+    var latDelta = PLACE_SEARCH_MARGIN_METERS / 111320;
+    var lngDelta = PLACE_SEARCH_MARGIN_METERS / Math.max(1, 111320 * Math.cos(toRad(midLatitude)));
+    var placeBox = format({
+      south: bounds.south - latDelta, west: bounds.west - lngDelta,
+      north: bounds.north + latDelta, east: bounds.east + lngDelta
+    });
     return '[out:json][timeout:' + (timeoutSeconds || 60) + '];\n' +
       '(\n' +
-      '  node(' + box + ')[~"^traffic_sign(:(forward|backward|both))?$"~"' + OVERPASS_VALUE_REGEX + '",i];\n' +
-      '  node(' + box + ')["place"~"' + PLACE_REGEX + '"];\n' +
-      '  way(' + box + ')["place"~"' + PLACE_REGEX + '"];\n' +
-      '  relation(' + box + ')["place"~"' + PLACE_REGEX + '"];\n' +
+      '  node(' + signBox + ')[~"^traffic_sign(:(forward|backward|both))?$"~"' + OVERPASS_VALUE_REGEX + '",i];\n' +
+      '  node(' + placeBox + ')["place"~"' + PLACE_REGEX + '"];\n' +
+      '  way(' + placeBox + ')["place"~"' + PLACE_REGEX + '"];\n' +
+      '  relation(' + placeBox + ')["place"~"' + PLACE_REGEX + '"];\n' +
       ');\n' +
       'out center qt;';
   }
@@ -556,7 +575,11 @@
         '<b>' + escapeHtml(sign.name || '(uden navn)') + '</b><br>' +
         (known
           ? 'Retning ind i byen: ' + Math.round(sign.entryHeading) + '°'
-          : '<span style="color:#b71c1c">Ukendt retning – ingen bynode fundet</span>') +
+          : '<span style="color:#b71c1c">Ukendt retning – ' +
+            (sign.tags.name
+              ? 'ingen by ved navn ' + escapeHtml(JSON.stringify(sign.tags.name)) + ' i nærheden'
+              : 'ingen by i nærheden') +
+            '. Springes over, medmindre "Advar ved ukendt retning" er slået til.</span>') +
         (sign.place ? '<br>Matchet by: ' + escapeHtml(sign.place.name || '(uden navn)') +
           ' (' + Math.round(C.distance(sign.position, sign.place.position)) + ' m' +
           (sign.place.isArea ? ', arealmidte' : '') + ')' : '') +

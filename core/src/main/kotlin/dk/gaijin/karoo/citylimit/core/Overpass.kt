@@ -21,6 +21,13 @@ object Overpass {
     /** Below this distance the bearing from sign to town centre is too noisy to be useful. */
     const val MIN_PLACE_DISTANCE_METERS = 25.0
 
+    /**
+     * Places are collected from a wider area than the signs, so a sign near the edge of a cell can
+     * still find the town it names. Without this the same sign resolves differently depending on
+     * which cell it is looked up from.
+     */
+    const val PLACE_SEARCH_MARGIN_METERS = 5_000.0
+
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
@@ -31,14 +38,15 @@ object Overpass {
      * `out center` gives those a usable centre point without pulling in their full geometry.
      */
     fun query(bbox: BoundingBox, timeoutSeconds: Int = 60): String {
-        val box = "${fmt(bbox.south)},${fmt(bbox.west)},${fmt(bbox.north)},${fmt(bbox.east)}"
+        val signBox = box(bbox)
+        val placeBox = box(bbox.expandMeters(PLACE_SEARCH_MARGIN_METERS))
         return """
             [out:json][timeout:$timeoutSeconds];
             (
-              node($box)[~"^traffic_sign(:(forward|backward|both))?${'$'}"~"${TrafficSignCodes.OVERPASS_VALUE_REGEX}",i];
-              node($box)["place"~"$PLACE_REGEX"];
-              way($box)["place"~"$PLACE_REGEX"];
-              relation($box)["place"~"$PLACE_REGEX"];
+              node($signBox)[~"^traffic_sign(:(forward|backward|both))?${'$'}"~"${TrafficSignCodes.OVERPASS_VALUE_REGEX}",i];
+              node($placeBox)["place"~"$PLACE_REGEX"];
+              way($placeBox)["place"~"$PLACE_REGEX"];
+              relation($placeBox)["place"~"$PLACE_REGEX"];
             );
             out center qt;
         """.trimIndent()
@@ -85,19 +93,25 @@ object Overpass {
     }
 
     /**
-     * The place a sign belongs to: the one it names when that name is mapped nearby, otherwise the
-     * nearest place. Mapped nodes win over area centres for an unnamed sign, since a node sits at
-     * the town centre while an area centre is only the middle of its bounding box.
+     * The place a sign belongs to.
+     *
+     * A sign that carries a name names its own town, so only a place with that name will do. Falling
+     * back to the nearest place for a named sign points the arrow at whatever village happens to be
+     * closest — signs reading "Lyngen" in Odsherred, where no such place is mapped, end up pointing
+     * at neighbouring hamlets, and at a different one depending on which area was downloaded. No
+     * direction at all is the honest answer there.
+     *
+     * An unnamed sign has nothing to match on, so the nearest place is the best available guess.
+     * Mapped nodes win over area centres, since a node sits at the town centre while an area centre
+     * is only the middle of its bounding box.
      */
     internal fun matchPlace(signPosition: LatLng, signName: String?, places: List<PlaceNode>): PlaceNode? {
         val normalized = signName?.trim()?.lowercase()
         if (!normalized.isNullOrEmpty()) {
-            val named = places
+            return places
                 .filter { it.name?.trim()?.lowercase() == normalized }
                 .minByOrNull { signPosition.distanceTo(it.position) }
-            if (named != null && signPosition.distanceTo(named.position) <= MAX_NAMED_PLACE_DISTANCE_METERS) {
-                return named
-            }
+                ?.takeIf { signPosition.distanceTo(it.position) <= MAX_NAMED_PLACE_DISTANCE_METERS }
         }
         val (nodes, areas) = places.partition { !it.isArea }
         return nearestWithin(signPosition, nodes) ?: nearestWithin(signPosition, areas)
@@ -140,6 +154,9 @@ object Overpass {
 
     @Serializable
     private data class Center(val lat: Double, val lon: Double)
+
+    private fun box(bbox: BoundingBox): String =
+        "${fmt(bbox.south)},${fmt(bbox.west)},${fmt(bbox.north)},${fmt(bbox.east)}"
 
     private fun fmt(value: Double): String = String.format(Locale.ROOT, "%.6f", value)
 }
