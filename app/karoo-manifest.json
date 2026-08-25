@@ -1,0 +1,10 @@
+{
+  "label": "City Limit",
+  "packageName": "dk.gaijin.karoo.citylimit",
+  "iconUrl": "https://github.com/ttopholm/karoo-citylimit/releases/latest/download/icon.png",
+  "developer": "ttopholm",
+  "description": "Alerts you when you are about to ride into a town, and stays quiet at the crossed-out sign on the way out. Town boundaries come from OpenStreetMap and are cached on the device, so a known area needs no connection.",
+  "latestApkUrl": "https://github.com/ttopholm/karoo-citylimit/releases/latest/download/citylimit.apk",
+  "latestVersion": "0.0.0",
+  "latestVersionCode": 0
+}

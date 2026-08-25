@@ -33,6 +33,11 @@
                 android:name="io.hammerhead.karooext.EXTENSION_INFO"
                 android:resource="@xml/extension_info" />
         </service>
+
+        <!-- Lets Karoo OS show app details and offer updates from the latest GitHub release. -->
+        <meta-data
+            android:name="io.hammerhead.karooext.MANIFEST_URL"
+            android:value="https://github.com/ttopholm/karoo-citylimit/releases/latest/download/manifest.json" />
     </application>
 
 </manifest>

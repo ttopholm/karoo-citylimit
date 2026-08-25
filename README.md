@@ -108,10 +108,53 @@ against the same fixtures the Kotlin tests use, and CI runs that check on every 
 core/   Pure Kotlin: geometry, sign classification, Overpass query/parsing, approach detection
 app/    Android app: the Karoo extension service, sign cache/downloader and the settings screen
 tools/  Standalone verification map and its parity check
+.github/workflows/  Tests and debug build on every push, signed release on every version tag
 ```
 
 All of the decision logic lives in `core/` and is covered by unit tests, including a simulated ride
 through a real village using a recorded Overpass response.
+
+## Installing on the Karoo
+
+Grab `citylimit.apk` from the [latest release](https://github.com/ttopholm/karoo-citylimit/releases/latest)
+and sideload it over adb — the Karoo needs USB debugging enabled (Settings → About → tap the build
+number, then Developer options):
+
+```bash
+adb install -r citylimit.apk          # over USB
+# or over Wi-Fi, with the Karoo's IP:
+adb connect 192.168.1.42:5555 && adb install -r citylimit.apk
+```
+
+The app declares `io.hammerhead.karooext.MANIFEST_URL`, pointing at `manifest.json` in the latest
+release, so Karoo OS can show the app's details and offer later versions as updates without another
+sideload.
+
+## Releases
+
+Releases are built by GitHub Actions, not by hand:
+
+1. Bump `versionName` and `versionCode` in `app/build.gradle.kts` — Karoo compares `versionCode`
+   to decide whether an update exists.
+2. Tag and push: `git tag -a v1.1 -m "What changed" && git push origin v1.1`.
+
+The workflow runs the tests, refuses the tag if it does not match `versionName`, then publishes the
+signed APK, a `manifest.json` generated from `app/karoo-manifest.json` with the version and download
+URLs filled in, and the app icon. The tag's message becomes `releaseNotes` in the manifest.
+
+**Signing matters for updates.** Android refuses to update an app when the signing key changes, so
+CI signs with a key held in repository secrets. Create one once and add it:
+
+```bash
+keytool -genkeypair -v -keystore release.jks -alias citylimit \
+  -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 release.jks     # paste as the KEYSTORE_BASE64 secret
+```
+
+Then set `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD` under Settings →
+Secrets and variables → Actions. Keep `release.jks` out of the repository and back it up: losing it
+means every install has to be removed before the next version can be installed. Without the secrets
+the workflow still builds, but signs with the debug key and warns that updates will not apply.
 
 ## Building
 
