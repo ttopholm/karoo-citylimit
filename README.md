@@ -90,7 +90,15 @@ the cache, and preview what an alert looks like.
 ## Verification map
 
 `tools/verify-map.html` is a standalone page for checking the data and the logic on a map before
-trusting it on the road. Open it in any browser — no build step, no server.
+trusting it on the road. Serve it over http and open it in a browser — no build step:
+
+```bash
+python3 -m http.server 8000     # from the repository root
+# then open http://localhost:8000/tools/verify-map.html
+```
+
+Opening the file directly from disk does not work: the browser then sends `Origin: null`, which
+Overpass rejects (406), so no data can be downloaded. The page says so if you try.
 
 * Pans to an area and downloads the same Overpass query the extension uses.
 * Draws every town-entry sign with an arrow for the direction that counts as riding in, marks signs

@@ -38,6 +38,8 @@
   ol.alerts li:hover { text-decoration: underline; }
   .muted { color: #666; font-size: 12.5px; }
   .error { color: #b71c1c; }
+  .banner { background: #fff3e0; border: 1px solid #ef6c00; border-radius: 6px; padding: 10px; margin-bottom: 10px; font-size: 12.5px; }
+  .banner code { display: block; background: #fff; border: 1px solid #e0e0e0; border-radius: 4px; padding: 6px; margin: 6px 0 0; overflow-x: auto; white-space: pre; }
   table.tags { border-collapse: collapse; font-size: 12px; margin-top: 4px; }
   table.tags td { border-top: 1px solid #eee; padding: 1px 6px 1px 0; vertical-align: top; }
   table.tags td:first-child { color: #555; white-space: nowrap; }
@@ -55,6 +57,13 @@
   <div id="map"></div>
   <div id="panel">
     <h1>Byskilt – verifikationskort</h1>
+    <div class="banner" id="file-warning" hidden>
+      Siden er åbnet direkte fra disken (<code style="display:inline;border:none;padding:0">file://</code>),
+      og så sender browseren <code style="display:inline;border:none;padding:0">Origin: null</code>, som Overpass
+      afviser. Server den i stedet lokalt fra repoets rod:
+      <code>python3 -m http.server 8000</code>
+      <span id="file-warning-link"></span>
+    </div>
     <p class="intro">
       Henter byskilte fra Overpass for kortudsnittet og kører samme logik som Karoo-udvidelsen:
       hvilke skilte beholdes, hvilken retning tæller som indkørsel, og hvor ville alarmen udløses.
@@ -444,6 +453,16 @@
   var loadStatus = element('load-status');
   var simStatus = element('sim-status');
 
+  // Overpass rejects requests from a null origin, so a page opened straight from disk can never
+  // download anything. Say so up front instead of letting it fail as a CORS error.
+  var openedFromDisk = location.protocol === 'file:';
+  if (openedFromDisk) {
+    element('file-warning').hidden = false;
+    var name = location.pathname.split('/').pop() || 'verify-map.html';
+    element('file-warning-link').innerHTML =
+      'og åbn <a href="http://localhost:8000/tools/' + name + '">http://localhost:8000/tools/' + name + '</a>';
+  }
+
   function config() {
     return {
       alertDistanceMeters: Number(element('alertDistance').value) || 200,
@@ -561,7 +580,11 @@
       render();
       loadStatus.textContent = 'Hentet ' + (data.signs.length + data.dropped.length) + ' skiltenoder for udsnittet.';
     }).catch(function (error) {
-      loadStatus.innerHTML = '<span class="error">Fejl: ' + escapeHtml(error.message) + '</span>';
+      var hint = openedFromDisk
+        ? ' Siden er åbnet fra disken – server den over http, se beskeden øverst.'
+        : ' Overpass afviser af og til forespørgsler når serveren er belastet; prøv igen eller vælg en anden server.';
+      loadStatus.innerHTML = '<span class="error">Fejl: ' + escapeHtml(error.message) + '</span>' +
+        '<span class="muted">' + hint + '</span>';
     }).then(function () {
       button.disabled = false;
     });
