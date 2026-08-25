@@ -92,7 +92,10 @@ Packs are built by `tools/build-packs.mjs`, which asks Overpass for a country ti
 same classification and town matching as the extension, and writes the result as grid cells split
 into files under 100 KB — small enough to also come through the Karoo system's HTTP API when the
 device has no Wi-Fi of its own. `.github/workflows/packs.yml` rebuilds them monthly and publishes
-them under the fixed `packs` release, so the download URL never changes. Overpass is then queried
+them under the fixed `packs` release, so the download URL never changes. That release is marked as a
+pre-release on purpose: GitHub resolves `/releases/latest` to the newest release that is neither
+draft nor pre-release, and the app reads `manifest.json` from there to find updates — an ordinary
+packs release takes that spot and the update check starts returning 404. Overpass is then queried
 once per rebuild instead of once per rider per area.
 
 On the device, *Download a region* in the settings screen lists what is available and installs a pack

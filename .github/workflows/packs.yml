@@ -4,6 +4,11 @@ name: Region packs
 # extension can always fetch:
 #   https://github.com/<owner>/<repo>/releases/download/packs/regions.json
 #
+# The release is marked as a pre-release, and that matters: GitHub resolves /releases/latest to the
+# most recent release that is neither draft nor pre-release. Publishing the packs as an ordinary
+# release makes them "latest", which breaks the app's own update check - it reads manifest.json from
+# /releases/latest/download/, and the packs release has no such file.
+#
 # Runs monthly, since signs in OpenStreetMap change slowly, and on demand from the Actions tab.
 
 on:
@@ -62,7 +67,12 @@ jobs:
           set -euo pipefail
           if ! gh release view packs >/dev/null 2>&1; then
             gh release create packs \
+              --prerelease \
               --title "Region packs" \
-              --notes "Sign data prepared for offline use, rebuilt monthly from OpenStreetMap via the Overpass API. Downloaded from the extension's settings screen."
+              --notes "Sign data prepared for offline use, rebuilt monthly from OpenStreetMap via the Overpass API. Downloaded from the extension's settings screen.
+
+          Marked as a pre-release on purpose, so it never becomes the repository's \"latest\" release: the app reads manifest.json from there to find updates."
           fi
+          # Enforce it on every run, including for a release created before this was in place.
+          gh release edit packs --prerelease --latest=false
           gh release upload packs build/packs/*.json --clobber

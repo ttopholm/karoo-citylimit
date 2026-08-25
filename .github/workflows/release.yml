@@ -69,8 +69,10 @@ jobs:
             notes=$(git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME")
           fi
 
-          jq --arg apk "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/citylimit.apk" \
-             --arg icon "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/icon.png" \
+          # Pinned to this version's own tag rather than /latest/, so the download keeps working
+          # even if another release later becomes the repository's latest.
+          jq --arg apk "https://github.com/$GITHUB_REPOSITORY/releases/download/v$version/citylimit.apk" \
+             --arg icon "https://github.com/$GITHUB_REPOSITORY/releases/download/v$version/icon.png" \
              --arg version "$version" \
              --argjson code "$code" \
              --arg notes "$notes" \
