@@ -7,6 +7,11 @@
 [build]
   publish = "tools"
   command = ""
+  functions = "netlify/functions"
+
+# Overpass rejects browser requests, and a plain proxy rewrite does not help because it forwards the
+# browser's headers unchanged. netlify/functions/overpass.mjs makes its own request with a fixed set
+# of headers instead, and serves /api/overpass from this origin.
 
 # The map is the only page worth serving, so make it the front page.
 [[redirects]]
