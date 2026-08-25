@@ -70,16 +70,37 @@
       hvilke skilte beholdes, hvilken retning tæller som indkørsel, og hvor ville alarmen udløses.
     </p>
 
-    <div class="row">
-      <button id="load" class="primary">Hent skilte for kortudsnittet</button>
-    </div>
-    <label>Overpass-server
-      <select id="endpoint">
-        <option value="overpass-api.de">overpass-api.de</option>
-        <option value="kumi">overpass.kumi.systems</option>
-        <option value="coffee">overpass.private.coffee</option>
+    <label>Datakilde
+      <select id="source">
+        <option value="pack">Områdepakke (samme data som Karoo'en)</option>
+        <option value="overpass">Overpass (live fra OpenStreetMap)</option>
       </select>
     </label>
+
+    <div id="pack-controls">
+      <label>Område
+        <select id="region"><option value="">Henter listen…</option></select>
+      </label>
+      <div class="row">
+        <button id="load-pack" class="primary">Hent pakken</button>
+      </div>
+      <p class="muted">Pakken hentes én gang og bliver i browseren, så kortet kan panoreres frit uden
+        flere kald. Den indeholder kun skilte med kendt retning — kasserede og uafklarede er allerede
+        sorteret fra, da pakken blev bygget.</p>
+    </div>
+
+    <div id="overpass-controls" hidden>
+      <div class="row">
+        <button id="load" class="primary">Hent skilte for kortudsnittet</button>
+      </div>
+      <label>Overpass-server
+        <select id="endpoint">
+          <option value="overpass-api.de">overpass-api.de</option>
+          <option value="kumi">overpass.kumi.systems</option>
+          <option value="coffee">overpass.private.coffee</option>
+        </select>
+      </label>
+    </div>
     <div id="load-status" class="muted">Ingen data hentet endnu.</div>
 
     <h2>Indstillinger</h2>
@@ -105,8 +126,10 @@
     <div class="stats" id="stats">
       <div>Skilte i brug: <b id="stat-kept">0</b></div>
       <div>Heraf uden kendt retning: <b id="stat-unknown">0</b></div>
-      <div>Kasseret (kun streg over): <b id="stat-dropped">0</b></div>
-      <div>Byer til retningsbestemmelse: <b id="stat-places">0</b> (heraf <b id="stat-areas">0</b> arealer)</div>
+      <div id="stat-dropped-row">Kasseret (kun streg over): <b id="stat-dropped">0</b></div>
+      <div id="stat-places-row">Byer til retningsbestemmelse: <b id="stat-places">0</b> (heraf <b id="stat-areas">0</b> arealer)</div>
+      <div id="stat-pack-note" class="muted" hidden>Kasserede og uafklarede skilte indgår ikke i en
+        pakke — de blev sorteret fra, da den blev bygget.</div>
     </div>
 
     <h2>Signaturforklaring</h2>
@@ -627,15 +650,15 @@
         (known
           ? 'Retning ind i byen: ' + Math.round(sign.entryHeading) + '°'
           : '<span style="color:#b71c1c">Ukendt retning – ' +
-            (sign.tags.name
-              ? 'ingen by ved navn ' + escapeHtml(JSON.stringify(sign.tags.name)) + ' i nærheden'
+            (sign.name
+              ? 'ingen by ved navn ' + escapeHtml(JSON.stringify(sign.name)) + ' i nærheden'
               : 'ingen by i nærheden') +
             '. Springes over, medmindre "Advar ved ukendt retning" er slået til.</span>') +
         (sign.place ? '<br>Matchet by: ' + escapeHtml(sign.place.name || '(uden navn)') +
           ' (' + Math.round(C.distance(sign.position, sign.place.position)) + ' m' +
           (sign.place.isArea ? ', arealmidte' : '') + ')' : '') +
         (sign.genericBoundary ? '<br><span class="muted">Generisk byzonenode (indkørsel den ene vej, ophør den anden)</span>' : '') +
-        '<br>' + osmLink(sign.id) + tagTable(sign.tags)
+        '<br>' + osmLink(sign.id) + (sign.tags ? tagTable(sign.tags) : '')
       ).addTo(signLayer);
 
       if (known) {
@@ -671,7 +694,113 @@
     element('stat-dropped').textContent = data.dropped.length;
     element('stat-places').textContent = data.places.length;
     element('stat-areas').textContent = data.places.filter(function (place) { return place.isArea; }).length;
+
+    var packMode = usingPack() && pack.loaded;
+    element('stat-dropped-row').hidden = packMode;
+    element('stat-places-row').hidden = packMode;
+    element('stat-pack-note').hidden = !packMode;
   }
+
+  var PACK_BASE = '/api/packs';
+  var pack = { region: null, signs: [], loaded: false };
+
+  function usingPack() { return element('source').value === 'pack'; }
+
+  function syncSource() {
+    var packMode = usingPack();
+    element('pack-controls').hidden = !packMode;
+    element('overpass-controls').hidden = packMode;
+    if (packMode && pack.loaded) {
+      showPackInView();
+    } else if (packMode) {
+      loadStatus.textContent = pack.region ? 'Tryk "Hent pakken" for at hente data.' : 'Henter listen over områder…';
+    } else {
+      loadStatus.textContent = 'Tryk "Hent skilte for kortudsnittet".';
+    }
+  }
+
+  element('source').addEventListener('change', syncSource);
+
+  /** Vis de skilte fra pakken, der ligger i kortudsnittet. */
+  function showPackInView() {
+    var bounds = map.getBounds();
+    var visible = pack.signs.filter(function (sign) {
+      return bounds.contains([sign.position.lat, sign.position.lng]);
+    });
+    data = { signs: visible, dropped: [], places: [] };
+    render();
+    loadStatus.textContent = visible.length + ' skilte i udsnittet (' + pack.signs.length +
+      ' i ' + pack.region.name + ').';
+  }
+
+  function packFetch(file) {
+    return fetch(PACK_BASE + '/' + file, { referrerPolicy: 'no-referrer' }).then(function (response) {
+      if (!response.ok) {
+        return response.text().then(function (detail) {
+          throw new Error(detail ? detail.slice(0, 200) : 'HTTP ' + response.status);
+        });
+      }
+      return response.json();
+    });
+  }
+
+  function loadRegionList() {
+    packFetch('regions.json').then(function (catalog) {
+      var select = element('region');
+      select.innerHTML = '';
+      catalog.regions.forEach(function (region) {
+        var option = document.createElement('option');
+        option.value = region.id;
+        option.textContent = region.name + ' – ' + region.signs + ' skilte, ' +
+          Math.round(region.bytes / 1024) + ' kB';
+        select.appendChild(option);
+      });
+      pack.region = catalog.regions[0] || null;
+      syncSource();
+    }).catch(function (error) {
+      element('region').innerHTML = '<option value="">Kunne ikke hentes</option>';
+      loadStatus.innerHTML = '<span class="error">Kunne ikke hente listen over områder: ' +
+        escapeHtml(error.message) + '</span>';
+    });
+  }
+
+  element('load-pack').addEventListener('click', function () {
+    var id = element('region').value;
+    if (!id) return;
+    var button = element('load-pack');
+    button.disabled = true;
+    loadStatus.textContent = 'Henter indeks …';
+    packFetch(id + '.json').then(function (index) {
+      pack.region = index;
+      var signs = [];
+      var next = function (position) {
+        if (position >= index.chunks.length) return Promise.resolve();
+        loadStatus.textContent = 'Henter del ' + (position + 1) + ' af ' + index.chunks.length + ' …';
+        return packFetch(index.chunks[position]).then(function (chunk) {
+          Object.keys(chunk.cells).forEach(function (cell) {
+            chunk.cells[cell].forEach(function (sign) { signs.push(sign); });
+          });
+          return next(position + 1);
+        });
+      };
+      return next(0).then(function () {
+        pack.signs = signs;
+        pack.loaded = true;
+        showPackInView();
+      });
+    }).catch(function (error) {
+      loadStatus.innerHTML = '<span class="error">Fejl: ' + escapeHtml(error.message) + '</span>';
+    }).then(function () {
+      button.disabled = false;
+    });
+  });
+
+  map.on('moveend', function () {
+    if (usingPack() && pack.loaded) showPackInView();
+  });
+
+  loadRegionList();
+  syncSource();
 
   element('load').addEventListener('click', function () {
     var bounds = map.getBounds();
@@ -753,7 +882,9 @@
   function run(reversed) {
     if (routePoints.length < 2) return;
     var points = reversed ? routePoints.slice().reverse() : routePoints.slice();
-    var alerts = C.simulateRide(points, data.signs, config());
+    // Ruten kan gå ud over kortudsnittet, så kør mod hele pakken når den er hentet.
+    var signs = (usingPack() && pack.loaded) ? pack.signs : data.signs;
+    var alerts = C.simulateRide(points, signs, config());
     alertLayer.clearLayers();
     var list = element('alerts');
     list.innerHTML = '';
