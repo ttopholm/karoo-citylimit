@@ -52,6 +52,11 @@
     <string name="status_karoo_connected">Karoo-systemet: forbundet</string>
     <string name="status_karoo_disconnected">Karoo-systemet: ikke forbundet</string>
 
+    <string name="regions_installed_at">På enheden, bygget %1$s</string>
+    <string name="regions_update">Nyere udgave klar, bygget %1$s</string>
+    <string name="regions_not_installed">Ikke hentet</string>
+    <string name="regions_refresh">Opdater</string>
+
     <string name="meters_format">%1$d m</string>
     <string name="seconds_format">%1$d s</string>
 

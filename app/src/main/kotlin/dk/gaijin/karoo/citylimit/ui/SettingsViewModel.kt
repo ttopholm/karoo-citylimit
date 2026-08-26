@@ -51,6 +51,10 @@ class SettingsViewModel(
     val regions: StateFlow<List<RegionPack>> = packs.catalog
     val packStatus: StateFlow<PackStatus> = packs.status
 
+    /** Region id to the build date of the pack currently on the device. */
+    val installedPacks: StateFlow<Map<String, String>> =
+        settingsStore.installedPacks.stateIn(scope, SharingStarted.Eagerly, emptyMap())
+
     /** Outcome of the last test alert, so the button says what happened. */
     enum class TestAlert { SENT, NOT_CONNECTED }
 
@@ -82,7 +86,9 @@ class SettingsViewModel(
     /** Download a whole region, so the ride needs no connection at all. */
     fun installRegion(region: RegionPack) {
         scope.launch {
-            packs.install(region)
+            packs.install(region).onSuccess {
+                region.generatedAt?.let { settingsStore.recordInstalledPack(region.id, it) }
+            }
             refreshStats()
         }
     }

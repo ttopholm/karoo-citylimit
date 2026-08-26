@@ -79,6 +79,33 @@ check('places are queried from a wider box than signs', (() => {
   });
 })());
 
+// A sign belongs to the road it stands on. Real case: Kulhuse in Hornsherred, where signs on side
+// roads running 58 degrees sit metres from Kulhusvej, which runs 314.
+check('line difference ignores which way round', C.lineDifference(134, 314) === 0 && C.lineDifference(330, 58) === 88);
+check('a sign across your road is skipped', (() => {
+  const sign = { id: 1, position: {lat:55.91813,lng:11.92277}, name: 'Kulhuse', entryHeading: 333, roadBearing: 58 };
+  const from = C.destination(sign.position, 400, 145), to = C.destination(sign.position, 200, 325);
+  return C.simulateRide([from, to], [sign], {}).length === 0;
+})());
+check('a sign on your own road still fires', (() => {
+  const sign = { id: 2, position: {lat:55.93532,lng:11.90776}, name: 'Kulhuse', entryHeading: 134, roadBearing: 314 };
+  const from = C.destination(sign.position, 400, 314), to = C.destination(sign.position, 200, 134);
+  return C.simulateRide([from, to], [sign], {}).length === 1;
+})());
+check('entry heading follows the road towards the town', (() => {
+  const sign = { position: {lat:55.9103,lng:11.9340}, roadBearing: 64.9,
+                 place: { position: {lat:55.9165,lng:11.9210} }, entryHeading: 326 };
+  C.alignEntryHeadings([sign]);
+  return Math.round(sign.entryHeading) === 245;
+})(), 'aligned');
+check('a road running past the town keeps the town bearing', (() => {
+  // Both directions along the road end up equally far from the centre: no honest answer.
+  const sign = { position: {lat:55.9000,lng:12.0000}, roadBearing: 90,
+                 place: { position: {lat:55.9100,lng:12.0000} }, entryHeading: 0 };
+  C.alignEntryHeadings([sign]);
+  return sign.entryHeading === 0;
+})());
+
 // The grid the extension caches in; the pack builder groups signs by the same cells.
 check('cell id matches the extension grid', C.cellIdFor({lat:55.9339,lng:12.3010}) === '1118/123', C.cellIdFor({lat:55.9339,lng:12.3010}));
 check('cell id handles negative coordinates', C.cellIdFor({lat:-33.9,lng:-70.7}) === '-678/-707', C.cellIdFor({lat:-33.9,lng:-70.7}));

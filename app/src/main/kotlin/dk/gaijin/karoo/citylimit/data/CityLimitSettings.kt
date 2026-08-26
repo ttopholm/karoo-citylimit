@@ -99,6 +99,34 @@ class SettingsStore(context: Context) {
 
     suspend fun setOverpassUrl(url: String) = edit { it[KEY_OVERPASS_URL] = url.trim() }
 
+    /**
+     * When each region pack was built, as the pack itself reported it. Lets the screen say which
+     * regions are installed and which have a newer build waiting.
+     */
+    val installedPacks: Flow<Map<String, String>> = dataStore.data
+        .catch { emit(emptyPreferences()) }
+        .map { preferences ->
+            preferences[KEY_INSTALLED_PACKS]
+                ?.split('\n')
+                ?.mapNotNull { line ->
+                    val id = line.substringBefore('=', "")
+                    val generatedAt = line.substringAfter('=', "")
+                    if (id.isEmpty() || generatedAt.isEmpty()) null else id to generatedAt
+                }
+                ?.toMap()
+                .orEmpty()
+        }
+
+    suspend fun recordInstalledPack(id: String, generatedAt: String) {
+        dataStore.edit { preferences ->
+            val current = preferences[KEY_INSTALLED_PACKS]
+                ?.split('\n')
+                ?.filter { it.isNotEmpty() && it.substringBefore('=') != id }
+                .orEmpty()
+            preferences[KEY_INSTALLED_PACKS] = (current + "$id=$generatedAt").joinToString("\n")
+        }
+    }
+
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         dataStore.edit(block)
     }
@@ -112,5 +140,6 @@ class SettingsStore(context: Context) {
         val KEY_UNKNOWN_DIRECTION = booleanPreferencesKey("alert_unknown_direction")
         val KEY_DOWNLOAD_RIDING = booleanPreferencesKey("download_while_riding")
         val KEY_OVERPASS_URL = stringPreferencesKey("overpass_url")
+        val KEY_INSTALLED_PACKS = stringPreferencesKey("installed_packs")
     }
 }

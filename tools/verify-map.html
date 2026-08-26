@@ -201,6 +201,69 @@
     return diff > 180 ? 360 - diff : diff;
   }
 
+  /* Mindste vinkel mellem to linjer (0-90). En vej løber begge veje, så retningen regnes modulo 180. */
+  function lineDifference(a, b) {
+    var diff = bearingDifference(a, b);
+    return diff > 90 ? 180 - diff : diff;
+  }
+
+  /*
+   * Retningen ind i byen går langs vejen, ikke tværs over markerne.
+   *
+   * Pejlingen mod bymidten er kun et gæt på "ind i byen": rammer vejen byen i en vinkel, kan de to
+   * pege 60-90 grader forskelligt. Kender vi vejen, er svaret bedre: den af vejens to retninger, der
+   * fører nærmest bymidten. Ligger de to lige langt fra midten, løber vejen på tværs af byen, og så
+   * er pejlingen mod midten stadig det bedste vi har.
+   */
+  function alignEntryHeadings(signs, probeMeters, minGapMeters) {
+    var probe = probeMeters || 500;
+    var minGap = minGapMeters || 100;
+    signs.forEach(function (sign) {
+      if (sign.roadBearing == null || !sign.place) return;
+      var forward = destination(sign.position, probe, sign.roadBearing);
+      var backward = destination(sign.position, probe, sign.roadBearing + 180);
+      var toForward = distance(forward, sign.place.position);
+      var toBackward = distance(backward, sign.place.position);
+      if (Math.abs(toForward - toBackward) < minGap) return;
+      sign.entryHeading = normalizeBearing(toForward < toBackward ? sign.roadBearing : sign.roadBearing + 180);
+    });
+    return signs;
+  }
+
+  /*
+   * Knytter hvert skilt til retningen af den vej, det står på.
+   *
+   * Ved et kryds kan et skilt på sidevejen stå få meter fra den vej, du kører ad, pege ind mod samme
+   * by og ligge foran dig — kun vejen det står på skiller dem ad. Deler to veje skiltets knude og
+   * løber i hver sin retning, er svaret ingen retning frem for et gæt.
+   */
+  function attachRoadBearings(signs, ways) {
+    var AGREEMENT_DEG = 30;
+    signs.forEach(function (sign) {
+      var bearings = [];
+      ways.forEach(function (way) {
+        if (!way.geometry || way.geometry.length < 2) return;
+        var index = -1, best = 3;  // meter: skiltet er en knude i vejen, så det er praktisk talt 0
+        way.geometry.forEach(function (point, j) {
+          var dx = (point.lon - sign.position.lng) * 111320 * Math.cos(toRad(sign.position.lat));
+          var dy = (point.lat - sign.position.lat) * 111320;
+          var d = Math.sqrt(dx * dx + dy * dy);
+          if (d < best) { best = d; index = j; }
+        });
+        if (index < 0) return;
+        var a = way.geometry[Math.max(0, index - 1)];
+        var b = way.geometry[Math.min(way.geometry.length - 1, index + 1)];
+        if (a === b) return;
+        bearings.push(bearing({ lat: a.lat, lng: a.lon }, { lat: b.lat, lng: b.lon }));
+      });
+      if (bearings.length === 0) return;
+      var first = bearings[0];
+      var agree = bearings.every(function (b) { return lineDifference(first, b) <= AGREEMENT_DEG; });
+      sign.roadBearing = agree ? first : null;
+    });
+    return signs;
+  }
+
   var GENERIC = 'city_limit';
   var ENTRY = /^(city_limit:begin|dk:e55|de:310|at:53-?17a|at:53a|ch:4\.(27|29)|se:e5|no:365|fi:571|nl:h01|be:f1[ab]?|fr:eb10|es:s-?500|pl:d-?42|cz:iz4a)$/;
   var EXIT = /^(city_limit:end|dk:e56|de:311|at:53-?17b|at:53b|ch:4\.(28|30)|se:e6|no:366|fi:572|nl:h02|be:f3[ab]?|fr:eb20|es:s-?510|pl:d-?43|cz:iz4b)$/;
@@ -402,6 +465,7 @@
     alertDistanceMeters: 200,
     approachConeDeg: 55,
     entryConeDeg: 80,
+    roadConeDeg: 45,
     alertWhenDirectionUnknown: false,
     cooldownMillis: 10 * 60 * 1000
   };
@@ -420,6 +484,7 @@
           var d = distance(position, sign.position);
           if (d > settings.alertDistanceMeters) return;
           if (bearingDifference(heading, bearing(position, sign.position)) > settings.approachConeDeg) return;
+          if (sign.roadBearing != null && lineDifference(heading, sign.roadBearing) > settings.roadConeDeg) return;
           if (sign.entryHeading === null || sign.entryHeading === undefined) {
             if (!settings.alertWhenDirectionUnknown) return;
           } else if (bearingDifference(heading, sign.entryHeading) > settings.entryConeDeg) {
@@ -492,6 +557,9 @@
     bearing: bearing,
     destination: destination,
     bearingDifference: bearingDifference,
+    lineDifference: lineDifference,
+    attachRoadBearings: attachRoadBearings,
+    alignEntryHeadings: alignEntryHeadings,
     classify: classify,
     matchPlace: matchPlace,
     entryHeading: entryHeading,
@@ -654,6 +722,7 @@
               ? 'ingen by ved navn ' + escapeHtml(JSON.stringify(sign.name)) + ' i nærheden'
               : 'ingen by i nærheden') +
             '. Springes over, medmindre "Advar ved ukendt retning" er slået til.</span>') +
+        (sign.roadBearing == null ? '' : '<br>Vej ved skiltet: ' + Math.round(sign.roadBearing) + '°') +
         (sign.place ? '<br>Matchet by: ' + escapeHtml(sign.place.name || '(uden navn)') +
           ' (' + Math.round(C.distance(sign.position, sign.place.position)) + ' m' +
           (sign.place.isArea ? ', arealmidte' : '') + ')' : '') +

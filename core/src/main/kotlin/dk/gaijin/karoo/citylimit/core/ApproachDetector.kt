@@ -11,6 +11,12 @@ data class DetectorConfig(
     /** The rider's heading has to be within this many degrees of the direction into the town. */
     val entryConeDeg: Double = 80.0,
     /**
+     * How far the rider's heading may differ from the road the sign stands on. A sign at a junction
+     * can sit a few metres from the road you are riding and still belong to the side road; the road
+     * it stands on tells them apart. Only checked for signs that know their road.
+     */
+    val roadConeDeg: Double = 45.0,
+    /**
      * Whether to alert for signs where it could not be worked out which direction is "into town".
      * Off by default: alerting on those risks announcing a town while riding *out* of it.
      */
@@ -63,6 +69,7 @@ class ApproachDetector(
             .filter { (_, distance) -> distance <= config.alertDistanceMeters }
             .filter { (sign, _) -> isAhead(position, heading, sign) }
             .filter { (sign, _) -> isEnteringTown(heading, sign) }
+            .filter { (sign, _) -> isOnTheRoadAhead(heading, sign) }
             .filter { (sign, _) -> !recentlyAnnounced(sign, nowMillis) }
             .minByOrNull { (_, distance) -> distance }
             ?: return null
@@ -85,6 +92,16 @@ class ApproachDetector(
     private fun isEnteringTown(heading: Double, sign: CityLimitSign): Boolean {
         val entryHeading = sign.entryHeading ?: return config.alertWhenDirectionUnknown
         return bearingDifference(heading, entryHeading) <= config.entryConeDeg
+    }
+
+    /**
+     * A sign belongs to the road it stands on. Riding across a junction, a sign on the side road can
+     * be a few metres away, ahead of you, and pointing into the same town — the road it stands on is
+     * what rules it out.
+     */
+    private fun isOnTheRoadAhead(heading: Double, sign: CityLimitSign): Boolean {
+        val roadBearing = sign.roadBearing ?: return true
+        return lineDifference(heading, roadBearing) <= config.roadConeDeg
     }
 
     private fun recentlyAnnounced(sign: CityLimitSign, nowMillis: Long): Boolean {
