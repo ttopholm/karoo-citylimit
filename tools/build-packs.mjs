@@ -178,9 +178,31 @@ way(bn.s)["highway"];
 out geom;`;
 }
 
+/**
+ * The roads that meet the ends of the sign roads.
+ *
+ * A town sign is where the 50 begins, and OpenStreetMap writes that limit on the roads themselves -
+ * in Denmark as source:maxspeed=DK:urban and DK:rural. The neighbours therefore say which side of
+ * the sign the town is on, which is the question the town centre cannot answer when the road runs
+ * across it.
+ */
+function joinQueryFor(region, tile) {
+  const box = [tile.south, tile.west, tile.north, tile.east].map((v) => v.toFixed(6)).join(',');
+  const area = region.area ? `area${region.area}->.region;` : '';
+  const signs = region.area ? `node(area.region)(${box})` : `node(${box})`;
+  return `[out:json][timeout:180];
+${area}
+${signs}[~"^traffic_sign(:(forward|backward|both))?$"~"${C.OVERPASS_VALUE_REGEX}",i]->.s;
+way(bn.s)["highway"]->.roads;
+node(w.roads)->.ends;
+way(bn.ends)["highway"];
+out body;`;
+}
+
 async function collect(region) {
   const elements = new Map();
   const roads = new Map();
+  const joins = new Map();
   const tiles = tilesOf(region);
   console.log(`  ${tiles.length} felter at hente`);
   for (const [index, tile] of tiles.entries()) {
@@ -196,14 +218,36 @@ async function collect(region) {
     await sleep(REQUEST_SPACING_MS);
 
     const roadData = await overpass(roadQueryFor(region, tile));
+    const ends = new Set();
     for (const way of roadData.elements ?? []) {
-      if (way.type === 'way' && way.geometry) roads.set(way.id, way);
+      if (way.type !== 'way' || !way.geometry || !way.nodes?.length) continue;
+      roads.set(way.id, way);
+      ends.add(way.nodes[0]);
+      ends.add(way.nodes[way.nodes.length - 1]);
+    }
+    await sleep(REQUEST_SPACING_MS);
+
+    const joinData = await overpass(joinQueryFor(region, tile));
+    let joined = 0;
+    for (const way of joinData.elements ?? []) {
+      if (way.type !== 'way' || !way.nodes) continue;
+      const touching = way.nodes.filter((node) => ends.has(node));
+      if (touching.length === 0) continue;
+      // Only the nodes at the road ends are carried on; the full node lists would run to gigabytes
+      // over a country.
+      const kept = joins.get(way.id);
+      joins.set(way.id, {
+        id: way.id,
+        nodes: kept ? [...new Set([...kept.nodes, ...touching])] : touching,
+        tags: way.tags ?? {},
+      });
+      joined++;
     }
     console.log(`  felt ${index + 1}/${tiles.length}: ${data.elements?.length ?? 0} elementer (${added} nye), ` +
-      `${roadData.elements?.length ?? 0} veje`);
+      `${roadData.elements?.length ?? 0} veje, ${joined} naboveje`);
     await sleep(REQUEST_SPACING_MS);
   }
-  return { elements: [...elements.values()], roads: [...roads.values()] };
+  return { elements: [...elements.values()], roads: [...roads.values()], joins: [...joins.values()] };
 }
 
 /** Group signs into the grid cells the extension caches in. */
@@ -251,10 +295,14 @@ function chunk(region, cells) {
 
 async function build(region, generatedAt) {
   console.log(`\n${region.name} (${region.id}):`);
-  const { elements, roads } = await collect(region);
+  const { elements, roads, joins } = await collect(region);
   const { signs, dropped, places } = C.parseResponse({ elements });
   C.attachRoadBearings(signs, roads);
   C.alignEntryHeadings(signs);
+  const byCentre = new Map(signs.map((sign) => [sign.id, sign.entryHeading]));
+  C.orientBySpeedZone(signs, roads, joins);
+  const turned = signs.filter((sign) => sign.entryHeading != null
+    && C.bearingDifference(byCentre.get(sign.id), sign.entryHeading) > 1).length;
   const withDirection = signs.filter((sign) => sign.entryHeading != null);
   const withRoad = withDirection.filter((sign) => sign.roadBearing != null).length;
   const cells = toCells(withDirection);
@@ -281,7 +329,7 @@ async function build(region, generatedAt) {
     `  ${withDirection.length} skilte i ${index.cells} celler, ${files.length} filer, ` +
     `${(bytes / 1024).toFixed(0)} kB ` +
     `(${signs.length - withDirection.length} uden retning og ${dropped.length} kun med streg over udeladt, ` +
-    `${places.length} byer brugt, ${withRoad} med kendt vejretning)`,
+    `${places.length} byer brugt, ${withRoad} med kendt vejretning, ${turned} rettet efter fartzonen)`,
   );
   return index;
 }
