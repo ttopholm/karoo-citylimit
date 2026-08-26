@@ -46,8 +46,14 @@ const REGIONS = [
   },
 ];
 
+/**
+ * Public Overpass instances, in the order they are asked. They all serve the same OpenStreetMap
+ * data and take no credentials; the second is a mirror that has answered every query put to it
+ * while the German instance was rate limiting, and is here so there is somewhere to go.
+ */
 const DEFAULT_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
 ];
@@ -61,7 +67,20 @@ const MAX_CHUNK_BYTES = 80_000;
 const PLACE_MARGIN_METERS = 5_000;
 
 const REQUEST_SPACING_MS = 4_000;
-const MAX_ATTEMPTS = 8;
+const MAX_ATTEMPTS = 12;
+
+/**
+ * Overpass hands out a couple of query slots per address, and GitHub runners share addresses with
+ * whoever else is querying from them, so a rate limit can arrive through no fault of this build.
+ * Leaving a gap between two queries to the same instance keeps us from being the cause.
+ */
+const SAME_HOST_GAP_MS = 12_000;
+
+/** Longest wait honoured when an instance says when its next slot frees. */
+const MAX_SLOT_WAIT_MS = 300_000;
+
+/** However patient the retries are, one query does not get to hold up the build all day. */
+const MAX_QUERY_MILLIS = 15 * 60_000;
 
 /**
  * The public Overpass instances queue requests; give up on one and try the next. An instance that
@@ -80,6 +99,21 @@ const REQUEST_TIMEOUT_MS = 90_000;
 const SICK_AFTER_FAILURES = 3;
 const RESTED_AFTER_REQUESTS = 20;
 
+/** An instance's own account of when it will take another query, from /api/status. */
+async function slotWaitMillis(endpoint) {
+  try {
+    const response = await fetch(endpoint.replace('/api/interpreter', '/api/status'), {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) return 0;
+    const seconds = /in (\d+) seconds/.exec(await response.text())?.[1];
+    return seconds ? Math.min(MAX_SLOT_WAIT_MS, (Number(seconds) + 2) * 1000) : 0;
+  } catch {
+    return 0;
+  }
+}
+
 const args = process.argv.slice(2);
 const only = value(args, '--region');
 const outDir = path.resolve(root, value(args, '--out') ?? 'build/packs');
@@ -95,18 +129,24 @@ function value(list, flag) {
   return index >= 0 ? list[index + 1] : undefined;
 }
 
-const health = new Map(ENDPOINTS.map((endpoint) => [endpoint, { failures: 0, restedAt: 0 }]));
+const health = new Map(ENDPOINTS.map((endpoint) => [endpoint, { failures: 0, restedAt: 0, readyAt: 0 }]));
 let requestCount = 0;
 
-/** The instances worth asking now: the ones not resting, or the least sick if they all are. */
+/**
+ * The instances worth asking now: the ones not resting, or the least sick if they all are, soonest
+ * free first. The order matters - an instance waiting out a rate limit must not hold up one that is
+ * free this second.
+ */
 function endpointsToTry() {
   const awake = ENDPOINTS.filter((endpoint) => health.get(endpoint).restedAt <= requestCount);
-  if (awake.length > 0) return awake;
-  return [...ENDPOINTS].sort((a, b) => health.get(a).failures - health.get(b).failures).slice(0, 1);
+  const worth = awake.length > 0
+    ? awake
+    : [...ENDPOINTS].sort((a, b) => health.get(a).failures - health.get(b).failures).slice(0, 1);
+  return [...worth].sort((a, b) => health.get(a).readyAt - health.get(b).readyAt);
 }
 
 function noteSuccess(endpoint) {
-  health.set(endpoint, { failures: 0, restedAt: 0 });
+  health.set(endpoint, { failures: 0, restedAt: 0, readyAt: Date.now() + SAME_HOST_GAP_MS });
 }
 
 function noteFailure(endpoint) {
@@ -122,8 +162,12 @@ function noteFailure(endpoint) {
 async function overpass(query) {
   let lastError = 'ingen forsøg';
   requestCount++;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  const giveUpAt = Date.now() + MAX_QUERY_MILLIS;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS && Date.now() < giveUpAt; attempt++) {
     for (const endpoint of endpointsToTry()) {
+      const state = health.get(endpoint);
+      const gap = state.readyAt - Date.now();
+      if (gap > 0) await sleep(gap);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
       const startedAt = Date.now();
@@ -142,17 +186,27 @@ async function overpass(query) {
           return JSON.parse(text);
         }
         lastError = `HTTP ${response.status} fra ${host(endpoint)} efter ${seconds}s`;
+        if (response.status === 429) {
+          // The instance knows when it will take another query; asking sooner only spends its time.
+          const wait = await slotWaitMillis(endpoint);
+          if (wait > 0) {
+            state.readyAt = Date.now() + wait;
+            lastError += `, næste plads om ${Math.round(wait / 1000)}s`;
+          }
+        }
       } catch (error) {
         lastError = `${host(endpoint)}: ${error.name === 'AbortError' ? 'timeout' : error.message}`;
       } finally {
         clearTimeout(timer);
       }
       noteFailure(endpoint);
+      state.readyAt = Math.max(state.readyAt, Date.now() + SAME_HOST_GAP_MS);
       process.stdout.write(`    ${lastError}\n`);
       await sleep(REQUEST_SPACING_MS);
     }
-    console.log(`    forsøg ${attempt}/${MAX_ATTEMPTS} mislykkedes (${lastError}), venter …`);
-    await sleep(Math.min(60_000, 5_000 * attempt));
+    const pause = Math.min(120_000, 10_000 * attempt);
+    console.log(`    forsøg ${attempt}/${MAX_ATTEMPTS} mislykkedes (${lastError}), venter ${pause / 1000}s …`);
+    await sleep(pause);
   }
   throw new Error(`Overpass svarede ikke: ${lastError}`);
 }
@@ -236,7 +290,8 @@ async function collect(region) {
   const joins = new Map();
   const tiles = tilesOf(region);
   console.log(`  ${tiles.length} felter at hente`);
-  for (const [index, tile] of tiles.entries()) {
+
+  async function fetchTile(tile, label) {
     const data = await overpass(queryFor(region, tile));
     let added = 0;
     for (const element of data.elements ?? []) {
@@ -272,9 +327,28 @@ async function collect(region) {
       });
       joined++;
     }
-    console.log(`  felt ${index + 1}/${tiles.length}: ${data.elements?.length ?? 0} elementer (${added} nye), ` +
+    console.log(`  felt ${label}: ${data.elements?.length ?? 0} elementer (${added} nye), ` +
       `${roads.size} veje i alt, ${joined} naboveje her`);
     await sleep(REQUEST_SPACING_MS);
+  }
+
+  // A tile that will not answer now often answers half an hour later, when whatever was wrong with
+  // the instance has passed. Losing an hour of a country to one bad minute is not worth it, so the
+  // failures are gathered and asked again at the end - and only then allowed to stop the build.
+  const missed = [];
+  for (const [index, tile] of tiles.entries()) {
+    try {
+      await fetchTile(tile, `${index + 1}/${tiles.length}`);
+    } catch (error) {
+      console.log(`  felt ${index + 1}/${tiles.length} sprang over: ${error.message}`);
+      missed.push([index, tile]);
+    }
+  }
+  if (missed.length > 0) {
+    console.log(`  ${missed.length} felter gav op; prøver dem igen`);
+    for (const [index, tile] of missed) {
+      await fetchTile(tile, `${index + 1}/${tiles.length} (anden runde)`);
+    }
   }
   return { elements: [...elements.values()], roads: [...roads.values()], joins: [...joins.values()] };
 }

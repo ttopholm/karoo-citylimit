@@ -130,6 +130,13 @@ draft nor pre-release, and the app reads `manifest.json` from there to find upda
 packs release takes that spot and the update check starts returning 404. Overpass is then queried
 once per rebuild instead of once per rider per area.
 
+Building a country is a long conversation with a donated service that is often busy. The builder asks
+several public instances in turn, leaves a gap between queries to the same one, and when an instance
+answers 429 it reads `/api/status` to learn when its next slot frees and waits exactly that long.
+An instance that fails three times in a row is passed over for a while, and a tile that will not
+answer at all is set aside and asked again at the end of the run rather than losing the country to
+one bad minute.
+
 On the device, *Download a region* in the settings screen lists what is available and installs a pack
 straight into the sign cache. Denmark holds around 9,000 town-entry signs, which comes to roughly a
 megabyte spread over some 16 files — a rounding error next to the map downloads on the device.
