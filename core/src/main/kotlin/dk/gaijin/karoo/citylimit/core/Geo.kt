@@ -68,6 +68,17 @@ fun normalizeLongitude(deg: Double): Double {
 }
 
 /**
+ * Smallest angle between two lines given by their bearings, in degrees (0..90).
+ *
+ * Unlike [bearingDifference] this ignores which way round each bearing points, which is what a road
+ * needs: it runs both ways.
+ */
+fun lineDifference(a: Double, b: Double): Double {
+    val diff = bearingDifference(a, b)
+    return if (diff > 90.0) 180.0 - diff else diff
+}
+
+/**
  * Smallest absolute difference between two bearings, in degrees (0..180).
  */
 fun bearingDifference(a: Double, b: Double): Double {

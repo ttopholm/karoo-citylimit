@@ -160,8 +160,27 @@ area${region.area}->.region;
 out center qt;`;
 }
 
+/**
+ * The roads the signs stand on, with geometry, so each sign can be tied to the direction of its own
+ * road. That is what tells a sign on the road you are riding from one on a side road a few metres
+ * away — the case that used to announce a town you were only passing.
+ */
+function roadQueryFor(region, tile) {
+  const box = [tile.south, tile.west, tile.north, tile.east].map((v) => v.toFixed(6)).join(',');
+  const area = region.area ? `area${region.area}->.region;` : '';
+  const signs = region.area
+    ? `node(area.region)(${box})`
+    : `node(${box})`;
+  return `[out:json][timeout:180];
+${area}
+${signs}[~"^traffic_sign(:(forward|backward|both))?$"~"${C.OVERPASS_VALUE_REGEX}",i]->.s;
+way(bn.s)["highway"];
+out geom;`;
+}
+
 async function collect(region) {
   const elements = new Map();
+  const roads = new Map();
   const tiles = tilesOf(region);
   console.log(`  ${tiles.length} felter at hente`);
   for (const [index, tile] of tiles.entries()) {
@@ -174,10 +193,17 @@ async function collect(region) {
         added++;
       }
     }
-    console.log(`  felt ${index + 1}/${tiles.length}: ${data.elements?.length ?? 0} elementer (${added} nye)`);
+    await sleep(REQUEST_SPACING_MS);
+
+    const roadData = await overpass(roadQueryFor(region, tile));
+    for (const way of roadData.elements ?? []) {
+      if (way.type === 'way' && way.geometry) roads.set(way.id, way);
+    }
+    console.log(`  felt ${index + 1}/${tiles.length}: ${data.elements?.length ?? 0} elementer (${added} nye), ` +
+      `${roadData.elements?.length ?? 0} veje`);
     await sleep(REQUEST_SPACING_MS);
   }
-  return [...elements.values()];
+  return { elements: [...elements.values()], roads: [...roads.values()] };
 }
 
 /** Group signs into the grid cells the extension caches in. */
@@ -192,6 +218,7 @@ function toCells(signs) {
       ...(sign.maxSpeed ? { maxSpeed: sign.maxSpeed } : {}),
       ...(sign.entryHeading == null ? {} : { entryHeading: round(sign.entryHeading, 1) }),
       ...(sign.townId == null ? {} : { townId: sign.townId }),
+      ...(sign.roadBearing == null ? {} : { roadBearing: round(sign.roadBearing, 1) }),
       ...(sign.genericBoundary ? { genericBoundary: true } : {}),
     });
   }
@@ -224,9 +251,12 @@ function chunk(region, cells) {
 
 async function build(region, generatedAt) {
   console.log(`\n${region.name} (${region.id}):`);
-  const elements = await collect(region);
+  const { elements, roads } = await collect(region);
   const { signs, dropped, places } = C.parseResponse({ elements });
+  C.attachRoadBearings(signs, roads);
+  C.alignEntryHeadings(signs);
   const withDirection = signs.filter((sign) => sign.entryHeading != null);
+  const withRoad = withDirection.filter((sign) => sign.roadBearing != null).length;
   const cells = toCells(withDirection);
   const files = chunk(region, cells);
 
@@ -240,6 +270,7 @@ async function build(region, generatedAt) {
     name: region.name,
     generatedAt,
     signs: withDirection.length,
+    signsWithRoad: withRoad,
     cells: Object.keys(cells).length,
     bytes,
     chunks: files.map((file) => file.file),
@@ -250,7 +281,7 @@ async function build(region, generatedAt) {
     `  ${withDirection.length} skilte i ${index.cells} celler, ${files.length} filer, ` +
     `${(bytes / 1024).toFixed(0)} kB ` +
     `(${signs.length - withDirection.length} uden retning og ${dropped.length} kun med streg over udeladt, ` +
-    `${places.length} byer brugt)`,
+    `${places.length} byer brugt, ${withRoad} med kendt vejretning)`,
   );
   return index;
 }

@@ -44,6 +44,20 @@ Town boundaries come from OpenStreetMap. Two things have to be true before you g
    still find the town it names, and the same sign always resolves the same way regardless of which
    cell it was looked up from.
 
+3. **The sign stands on the road you are riding.** At a junction, a sign belonging to the side road
+   can be metres from your own road, ahead of you, and point into the same town. Region packs carry
+   the direction of the road each sign stands on, and your heading has to be within 45° of it
+   (either way round — a road runs both ways). Kulhuse in Hornsherred is the case that prompted
+   this: three of its four signs stand on residential roads running 58°, one of them 8 m from
+   Kulhusvej, which runs 314°. Riding along Kulhusvej announced a town the rider was only passing,
+   and no measure of "how far to the side" could have caught it.
+
+   Where the road is known, the direction into town also follows it: the entry heading becomes
+   whichever way along the road leads towards the town centre. The bearing straight at the centre is
+   only a proxy — a road meeting a town at an angle can differ from it by 60-90°, which would leave
+   23% of signs unable to fire at all. Following the road brings that down to 3%, and those are
+   roads that pass a town tangentially, where no direction is honest.
+
 On top of that the sign has to lie ahead of you (within 55° of your heading) and inside the alert
 distance, and each town is only announced once per ten minutes.
 
@@ -52,6 +66,10 @@ setting *Also alert when direction is unknown* turns them on if you would rather
 alerts than miss a town.
 
 ## Sign data
+
+Only region packs carry road directions: the geometry of every road a sign stands on is far too much
+to fetch from the saddle, but nothing at all in a nightly build. Cells fetched live while riding
+behave as they did before, without that check.
 
 Data is queried from the [Overpass API](https://overpass-api.de/) in grid cells of roughly 5 × 6 km
 and cached on the device for 90 days. Each query returns the sign nodes plus the places used for

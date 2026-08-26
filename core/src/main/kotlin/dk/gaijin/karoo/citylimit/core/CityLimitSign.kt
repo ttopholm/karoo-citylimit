@@ -24,6 +24,15 @@ data class CityLimitSign(
     val entryHeading: Double? = null,
     /** OSM id of the place node this sign was matched to, when one was found. */
     val townId: Long? = null,
+    /**
+     * Direction of the road the sign stands on, in degrees, as it runs past the sign. Either way
+     * along the road describes it, so compare it modulo 180.
+     *
+     * Only region packs carry this: it needs the geometry of the road, which is too much to fetch
+     * from the saddle. It is what tells a sign on the road you are riding from one on a side road a
+     * few metres away.
+     */
+    val roadBearing: Double? = null,
     /** True when the node is only tagged as a generic boundary, without begin/end distinction. */
     val genericBoundary: Boolean = false,
 ) {
