@@ -264,6 +264,132 @@
     return signs;
   }
 
+  /*
+   * Fartzonen på en vej: inde i byen eller ude på landet.
+   *
+   * Et byskilt *er* fartgrænsen. OpenStreetMap skriver den grænse på selve vejen — i Danmark som
+   * source:maxspeed=DK:urban og DK:rural — så vejens egen fart fortæller hvilken side af skiltet
+   * byen ligger på. Står der ingenting, må vejklassen gætte: en sekundærvej er landevej, en
+   * villavej er by.
+   */
+  var URBAN_ZONE = /urban|:(20|30|40|50)$/;
+  var RURAL_ZONE = /rural|:(60|70|80|90|100|110|120|130)$/;
+
+  function speedZone(tags) {
+    var source = String((tags && (tags['source:maxspeed'] || tags['zone:maxspeed'])) || '').toLowerCase();
+    if (URBAN_ZONE.test(source)) return 'urban';
+    if (RURAL_ZONE.test(source)) return 'rural';
+    var speed = parseInt(String((tags && tags.maxspeed) || ''), 10);
+    if (isFinite(speed) && speed > 0) return speed <= 50 ? 'urban' : 'rural';
+    var highway = String((tags && tags.highway) || '');
+    if (/^(motorway|trunk|primary|secondary)$/.test(highway)) return 'rural';
+    if (/^(residential|living_street)$/.test(highway)) return 'urban';
+    return null;
+  }
+
+  /* Hvor langt fra skiltet en vejende stadig tæller som "lige der". */
+  var ZONE_END_METERS = 200;
+
+  /*
+   * Retningen ind i byen, læst af hvor byzonen begynder.
+   *
+   * Pejlingen mod bymidten svarer forkert, når vejen løber på tværs af den. Ved Kulhuse står
+   * skiltene på korte stikveje mellem Gammel Kulhusvej og Kulhusvej: bymidten ligger mod nordvest,
+   * mens vejene løber nordøst-sydvest, så begge retninger er lige langt fra midten, og skiltene
+   * endte med en retning ingen cyklist kan have. Fartzonen svarer i stedet på det spørgsmål
+   * skiltet faktisk stiller: på hvilken side begynder de 50?
+   *
+   * To tilfælde dækker næsten alle skilte:
+   *  1. skiltet deler vejen i to — en landevejsdel og en byzonedel — og ind er mod byzonen,
+   *  2. skiltet står midt i en byzonevej, og den ende af vejen der møder landevejen er ud af byen.
+   *
+   * @param roads skiltenes egne veje, med geometri (way(bn) med out geom)
+   * @param joins de veje der støder til vejenes ender, med knudelister og tags
+   */
+  function orientBySpeedZone(signs, roads, joins) {
+    var roadsAt = indexWaysByNode(roads);
+    var joinsAt = indexWaysByNode(joins);
+    signs.forEach(function (sign) {
+      // Retter en retning, finder ikke nye: skilte uden by er udeladt af andre grunde end retningen.
+      if (sign.entryHeading == null) return;
+      var heading = builtUpDirection(sign, roadsAt, joinsAt);
+      if (heading != null) sign.entryHeading = heading;
+    });
+    return signs;
+  }
+
+  function indexWaysByNode(ways) {
+    var index = new Map();
+    (ways || []).forEach(function (way) {
+      (way.nodes || []).forEach(function (node) {
+        var list = index.get(node);
+        if (!list) index.set(node, list = []);
+        list.push(way);
+      });
+    });
+    return index;
+  }
+
+  function builtUpDirection(sign, roadsAt, joinsAt) {
+    var own = roadsAt.get(sign.id) || [];
+    if (own.length === 0) return null;
+    var through = own.filter(function (way) {
+      var index = way.nodes.indexOf(sign.id);
+      return index > 0 && index < way.nodes.length - 1;
+    });
+    if (through.length === 1) return zoneAcrossRoad(sign, through[0], joinsAt);
+    if (through.length === 0 && own.length >= 2) return zoneAtSplit(sign, own);
+    return null;
+  }
+
+  /* Skiltet er knuden hvor vejen skifter fart: ind er den vej der har byzonen. */
+  function zoneAtSplit(sign, own) {
+    var sides = [];
+    own.forEach(function (way) {
+      var index = way.nodes.indexOf(sign.id);
+      var neighbour = way.geometry && way.geometry[index === 0 ? 1 : index - 1];
+      if (!neighbour) return;
+      sides.push({
+        zone: speedZone(way.tags),
+        away: bearing(sign.position, { lat: neighbour.lat, lng: neighbour.lon })
+      });
+    });
+    var urban = sides.filter(function (side) { return side.zone === 'urban'; });
+    var rural = sides.filter(function (side) { return side.zone === 'rural'; });
+    return urban.length === 1 && rural.length >= 1 ? urban[0].away : null;
+  }
+
+  /* Skiltet står midt i en byzonevej: den ende der løber ud på landevejen er vejen ud af byen. */
+  function zoneAcrossRoad(sign, way, joinsAt) {
+    if (speedZone(way.tags) !== 'urban') return null;
+    var index = way.nodes.indexOf(sign.id);
+    var last = way.nodes.length - 1;
+    var ends = [];
+    [[last, index + 1], [0, index - 1]].forEach(function (pair) {
+      var endIndex = pair[0], stepIndex = pair[1];
+      if (endIndex === index) return;
+      var end = way.geometry[endIndex];
+      if (!end || distance(sign.position, { lat: end.lat, lng: end.lon }) > ZONE_END_METERS) return;
+      var zones = new Set();
+      (joinsAt.get(way.nodes[endIndex]) || []).forEach(function (other) {
+        if (other.id === way.id) return;
+        var zone = speedZone(other.tags);
+        if (zone) zones.add(zone);
+      });
+      if (zones.size !== 1) return;
+      var step = way.geometry[stepIndex];
+      if (!step) return;
+      ends.push({
+        zone: zones.values().next().value,
+        away: bearing(sign.position, { lat: step.lat, lng: step.lon })
+      });
+    });
+    var rural = ends.filter(function (end) { return end.zone === 'rural'; });
+    var urban = ends.filter(function (end) { return end.zone === 'urban'; });
+    if (rural.length !== 1) return null;
+    return urban.length === 1 ? urban[0].away : normalizeBearing(rural[0].away + 180);
+  }
+
   var GENERIC = 'city_limit';
   var ENTRY = /^(city_limit:begin|dk:e55|de:310|at:53-?17a|at:53a|ch:4\.(27|29)|se:e5|no:365|fi:571|nl:h01|be:f1[ab]?|fr:eb10|es:s-?500|pl:d-?42|cz:iz4a)$/;
   var EXIT = /^(city_limit:end|dk:e56|de:311|at:53-?17b|at:53b|ch:4\.(28|30)|se:e6|no:366|fi:572|nl:h02|be:f3[ab]?|fr:eb20|es:s-?510|pl:d-?43|cz:iz4b)$/;
@@ -560,6 +686,8 @@
     lineDifference: lineDifference,
     attachRoadBearings: attachRoadBearings,
     alignEntryHeadings: alignEntryHeadings,
+    speedZone: speedZone,
+    orientBySpeedZone: orientBySpeedZone,
     classify: classify,
     matchPlace: matchPlace,
     entryHeading: entryHeading,

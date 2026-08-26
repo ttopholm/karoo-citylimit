@@ -106,6 +106,56 @@ check('a road running past the town keeps the town bearing', (() => {
   return sign.entryHeading === 0;
 })());
 
+// The town sign is where the 50 begins, so the speed limit on the roads says which side the town is
+// on. Real case: the Kulhuse signs stand on short link roads between Gammel Kulhusvej and Kulhusvej,
+// with the village centre off to the north-west, so the bearing to the centre pointed across the
+// road the rider is on and the signs never fired.
+check('a town road is urban, a country road is not',
+  C.speedZone({ maxspeed: '50', 'source:maxspeed': 'DK:urban' }) === 'urban'
+  && C.speedZone({ maxspeed: '80', 'source:maxspeed': 'DK:rural' }) === 'rural'
+  && C.speedZone({ maxspeed: '40' }) === 'urban'
+  && C.speedZone({ highway: 'secondary' }) === 'rural'
+  && C.speedZone({ highway: 'residential' }) === 'urban'
+  && C.speedZone({ highway: 'track' }) === null);
+check('the speed limit beats the road class', C.speedZone({ highway: 'secondary', maxspeed: '50' }) === 'urban');
+
+check('a sign in a town road is entered away from the country road', (() => {
+  // Solsortevej (way 845017444) runs 59 m from Gammel Kulhusvej to Kulhusvej with the sign 8 m from
+  // the Kulhusvej end; the rider turns off Kulhusvej heading 238.
+  const sign = { id: 7996794555, position: { lat: 55.9181292, lng: 11.9227711 }, entryHeading: 333, roadBearing: 57.9 };
+  const road = { id: 845017444, tags: { highway: 'residential', maxspeed: '50', 'source:maxspeed': 'DK:urban' },
+    nodes: [112090557, 10285565809, 7996794555, 1531070730],
+    geometry: [{ lat: 55.917887, lon: 11.922083 }, { lat: 55.917902, lon: 11.922126 },
+      { lat: 55.918129, lon: 11.922771 }, { lat: 55.918167, lon: 11.922879 }] };
+  const joins = [
+    { id: 12350420, tags: { highway: 'unclassified', maxspeed: '50', 'source:maxspeed': 'DK:urban' }, nodes: [112090557] },
+    { id: 656811012, tags: { highway: 'secondary', maxspeed: '80', 'source:maxspeed': 'DK:rural' }, nodes: [1531070730] },
+  ];
+  C.orientBySpeedZone([sign], [road], joins);
+  return Math.round(sign.entryHeading) === 238;
+})(), 'Kulhuse');
+
+check('a sign where the limit changes points into the town', (() => {
+  // Vollerupvej: 50 to the west of the sign, 80 to the east.
+  const sign = { id: 1049177615, position: { lat: 55.7230925, lng: 11.0694762 }, entryHeading: 264, roadBearing: 78 };
+  const urban = { id: 133487813, tags: { highway: 'unclassified', maxspeed: '50', 'source:maxspeed': 'DK:urban' },
+    nodes: [11119128079, 1049177615], geometry: [{ lat: 55.72304, lon: 11.06904 }, { lat: 55.7230925, lon: 11.0694762 }] };
+  const rural = { id: 1198655642, tags: { highway: 'unclassified', maxspeed: '80', 'source:maxspeed': 'DK:rural' },
+    nodes: [1049177615, 11119128080], geometry: [{ lat: 55.7230925, lon: 11.0694762 }, { lat: 55.72449, lon: 11.07886 }] };
+  C.orientBySpeedZone([sign], [urban, rural], []);
+  return C.bearingDifference(sign.entryHeading, 258) < 10;
+})(), 'Vollerup');
+
+check('no answer leaves the direction alone', (() => {
+  // Both sides of the sign are town roads: the speed limit says nothing, so the town centre stands.
+  const sign = { id: 1, position: { lat: 55.9181292, lng: 11.9227711 }, entryHeading: 333, roadBearing: 57.9 };
+  const road = { id: 2, tags: { highway: 'residential', maxspeed: '50' }, nodes: [10, 1, 11],
+    geometry: [{ lat: 55.91800, lon: 11.92240 }, { lat: 55.9181292, lon: 11.9227711 }, { lat: 55.91820, lon: 11.92300 }] };
+  const joins = [{ id: 3, tags: { highway: 'residential', maxspeed: '50' }, nodes: [10, 11] }];
+  C.orientBySpeedZone([sign], [road], joins);
+  return sign.entryHeading === 333;
+})());
+
 // The grid the extension caches in; the pack builder groups signs by the same cells.
 check('cell id matches the extension grid', C.cellIdFor({lat:55.9339,lng:12.3010}) === '1118/123', C.cellIdFor({lat:55.9339,lng:12.3010}));
 check('cell id handles negative coordinates', C.cellIdFor({lat:-33.9,lng:-70.7}) === '-678/-707', C.cellIdFor({lat:-33.9,lng:-70.7}));

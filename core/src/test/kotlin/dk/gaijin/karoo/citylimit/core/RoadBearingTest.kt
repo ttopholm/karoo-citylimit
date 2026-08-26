@@ -6,21 +6,21 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * A sign belongs to the road it stands on.
+ * A sign belongs to the road it stands on, and is entered along that road.
  *
- * The case that prompted this is Kulhuse in Hornsherred, from real OpenStreetMap data: two signs
- * reading "Kulhuse" stand on side roads running 58°/238° while the through road, Kulhusvej, runs
- * 314°/134°. One of them is 8 metres from Kulhusvej, so no measure of "how far to the side" can tell
- * it apart — riding north-west along Kulhusvej announced a town the rider was only passing.
+ * The case that prompted this is Kulhuse in Hornsherred, from real OpenStreetMap data. Kulhusvej
+ * runs past the village at 314/134; the signs stand on short link roads off it, running 58/238. A
+ * sign 8 metres from Kulhusvej must stay quiet for a rider carrying on along it, and must speak for
+ * one who turns off onto the road it stands on.
  */
 class RoadBearingTest {
-    /** On Solsortevej, a residential road off Kulhusvej. */
+    /** On Solsortevej, a link road off Kulhusvej; you enter the village riding down it, at 238. */
     private val sideRoadSign = CityLimitSign(
         id = 7996794555,
         position = LatLng(55.91813, 11.92277),
         name = "Kulhuse",
-        entryHeading = 333.0,
-        roadBearing = 58.0,
+        entryHeading = 237.9,
+        roadBearing = 57.9,
     )
 
     /** On Kulhusvej itself. */
@@ -28,36 +28,52 @@ class RoadBearingTest {
         id = 13935704590,
         position = LatLng(55.93532, 11.90776),
         name = "Kulhuse",
-        entryHeading = 154.4,
+        entryHeading = 134.0,
         roadBearing = 314.0,
     )
 
     private fun approaching(sign: CityLimitSign, heading: Double, distance: Double = 150.0) =
         sign.position.destination(distance, normalizeBearing(heading + 180.0))
 
-    @Test
-    fun `riding past a sign on a side road says nothing`() {
-        val heading = 330.0
-        val alert = ApproachDetector().update(
-            position = approaching(sideRoadSign, heading),
+    private fun alertFor(sign: CityLimitSign, heading: Double, distance: Double = 150.0) =
+        ApproachDetector().update(
+            position = approaching(sign, heading, distance),
             heading = heading,
-            signs = listOf(sideRoadSign),
+            signs = listOf(sign),
             nowMillis = 0,
         )
-        assertNull("a sign on a road across yours is not your sign", alert)
+
+    @Test
+    fun `riding past a sign on a side road says nothing`() {
+        assertNull("a sign on a road across yours is not your sign", alertFor(sideRoadSign, 330.0))
+    }
+
+    @Test
+    fun `turning off onto the road the sign stands on announces the town`() {
+        // Coming down Kulhusvej and turning left into Kulhuse: the sign sits metres past the corner.
+        val alert = alertFor(sideRoadSign, 238.0, distance = 40.0)
+        assertNotNull("turning in is entering the town", alert)
+        assertEquals("Kulhuse", alert!!.sign.name)
+    }
+
+    @Test
+    fun `riding back out of the side road says nothing`() {
+        assertNull(alertFor(sideRoadSign, 58.0, distance = 40.0))
     }
 
     @Test
     fun `riding along the road the sign stands on still announces it`() {
-        val heading = 134.0
-        val alert = ApproachDetector().update(
-            position = approaching(throughRoadSign, heading),
-            heading = heading,
-            signs = listOf(throughRoadSign),
-            nowMillis = 0,
-        )
+        val alert = alertFor(throughRoadSign, 134.0)
         assertNotNull(alert)
         assertEquals("Kulhuse", alert!!.sign.name)
+    }
+
+    @Test
+    fun `the road rules out a sign the town direction would have allowed`() {
+        // 300 is within the 80 degrees of the entry heading, but 62 off the road: not this rider's.
+        assertEquals(62.0, bearingDifference(300.0, 237.9), 0.2)
+        assertEquals(62.1, lineDifference(300.0, 57.9), 0.2)
+        assertNull(alertFor(sideRoadSign, 300.0))
     }
 
     @Test
@@ -74,29 +90,13 @@ class RoadBearingTest {
     fun `a sign that does not know its road behaves as before`() {
         // Live cells fetched from Overpass carry no road, and must not go silent because of it.
         val unknownRoad = sideRoadSign.copy(roadBearing = null)
-        val heading = 333.0
-        assertNotNull(
-            ApproachDetector().update(
-                position = approaching(unknownRoad, heading),
-                heading = heading,
-                signs = listOf(unknownRoad),
-                nowMillis = 0,
-            ),
-        )
+        assertNotNull(alertFor(unknownRoad, 238.0))
     }
 
     @Test
     fun `a bend in the road is still the same road`() {
         // Roads are not straight: the alert fires from a couple of hundred metres back, where the
         // rider's heading can differ from the road at the sign. 45 degrees leaves room for that.
-        val heading = 100.0
-        assertNotNull(
-            ApproachDetector().update(
-                position = approaching(throughRoadSign, heading),
-                heading = heading,
-                signs = listOf(throughRoadSign.copy(entryHeading = 120.0)),
-                nowMillis = 0,
-            ),
-        )
+        assertNotNull(alertFor(throughRoadSign.copy(entryHeading = 120.0), 100.0))
     }
 }

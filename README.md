@@ -55,8 +55,21 @@ Town boundaries come from OpenStreetMap. Two things have to be true before you g
    Where the road is known, the direction into town also follows it: the entry heading becomes
    whichever way along the road leads towards the town centre. The bearing straight at the centre is
    only a proxy — a road meeting a town at an angle can differ from it by 60-90°, which would leave
-   23% of signs unable to fire at all. Following the road brings that down to 3%, and those are
-   roads that pass a town tangentially, where no direction is honest.
+   23% of signs unable to fire at all. Following the road brings that down to 3%.
+
+   The town centre cannot answer at all when the road runs *across* the line to it: both ways along
+   the road are equally far from the centre. The speed limit answers instead. A town sign is where
+   the 50 begins, and OpenStreetMap writes that limit on the roads themselves — in Denmark as
+   `source:maxspeed=DK:urban` and `DK:rural` — so the road either side of the sign says which way is
+   in. Two shapes cover nearly every sign: the sign is the node where a road changes limit, and in
+   is towards the town side; or the sign stands inside a town road whose end, within 200 m, meets a
+   country road, and in is away from that end. Kulhuse again: its signs stand on 60 m link roads
+   between Gammel Kulhusvej and Kulhusvej with the village off to the north-west, so the centre
+   bearing pointed 95° away from any heading a rider on those roads can have, and turning off
+   Kulhusvej into the village raised nothing. Across four sample areas the speed limit leaves 76% of
+   directions untouched, nudges 20% onto the road, reverses 4%, and revives 40 of the 55 signs that
+   pointed somewhere no rider could go. Where it is silent — both sides of the sign tagged the same,
+   or nothing tagged at all — the town centre stands.
 
 On top of that the sign has to lie ahead of you (within 55° of your heading) and inside the alert
 distance, and each town is only announced once per ten minutes.
@@ -67,9 +80,10 @@ alerts than miss a town.
 
 ## Sign data
 
-Only region packs carry road directions: the geometry of every road a sign stands on is far too much
-to fetch from the saddle, but nothing at all in a nightly build. Cells fetched live while riding
-behave as they did before, without that check.
+Only region packs carry road directions: the geometry of every road a sign stands on, plus the roads
+meeting its ends, is far too much to fetch from the saddle, but nothing at all in a nightly build —
+three queries per tile instead of one. Cells fetched live while riding behave as they did before,
+without that check, and take the town centre as the direction into town.
 
 Data is queried from the [Overpass API](https://overpass-api.de/) in grid cells of roughly 5 × 6 km
 and cached on the device for 90 days. Each query returns the sign nodes plus the places used for
