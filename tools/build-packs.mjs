@@ -61,10 +61,24 @@ const MAX_CHUNK_BYTES = 80_000;
 const PLACE_MARGIN_METERS = 5_000;
 
 const REQUEST_SPACING_MS = 4_000;
-const MAX_ATTEMPTS = 6;
+const MAX_ATTEMPTS = 8;
 
-/** The public Overpass instances queue requests; give up on one and try the next. */
-const REQUEST_TIMEOUT_MS = 180_000;
+/**
+ * The public Overpass instances queue requests; give up on one and try the next. An instance that
+ * is going to answer does so in a few seconds, so a long wait here only buys time from one that has
+ * already given up on the query.
+ */
+const REQUEST_TIMEOUT_MS = 90_000;
+
+/**
+ * The public instances take turns being broken. In one build private.coffee and kumi.systems
+ * answered 500 or 502 to very nearly every request, several of them taking two minutes to say so,
+ * and the country took three hours instead of one. After a few failures in a row an instance is
+ * passed over for a while, so a rate limit on the good one is waited out rather than spent asking
+ * two that are down.
+ */
+const SICK_AFTER_FAILURES = 3;
+const RESTED_AFTER_REQUESTS = 20;
 
 const args = process.argv.slice(2);
 const only = value(args, '--region');
@@ -81,10 +95,35 @@ function value(list, flag) {
   return index >= 0 ? list[index + 1] : undefined;
 }
 
+const health = new Map(ENDPOINTS.map((endpoint) => [endpoint, { failures: 0, restedAt: 0 }]));
+let requestCount = 0;
+
+/** The instances worth asking now: the ones not resting, or the least sick if they all are. */
+function endpointsToTry() {
+  const awake = ENDPOINTS.filter((endpoint) => health.get(endpoint).restedAt <= requestCount);
+  if (awake.length > 0) return awake;
+  return [...ENDPOINTS].sort((a, b) => health.get(a).failures - health.get(b).failures).slice(0, 1);
+}
+
+function noteSuccess(endpoint) {
+  health.set(endpoint, { failures: 0, restedAt: 0 });
+}
+
+function noteFailure(endpoint) {
+  const state = health.get(endpoint);
+  state.failures++;
+  if (state.failures >= SICK_AFTER_FAILURES) {
+    state.restedAt = requestCount + RESTED_AFTER_REQUESTS;
+    state.failures = SICK_AFTER_FAILURES - 1;
+    process.stdout.write(`    ${host(endpoint)} springes over indtil videre\n`);
+  }
+}
+
 async function overpass(query) {
   let lastError = 'ingen forsøg';
+  requestCount++;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    for (const endpoint of ENDPOINTS) {
+    for (const endpoint of endpointsToTry()) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
       const startedAt = Date.now();
@@ -99,6 +138,7 @@ async function overpass(query) {
         const seconds = ((Date.now() - startedAt) / 1000).toFixed(0);
         if (response.ok && text.trimStart().startsWith('{')) {
           process.stdout.write(`    ${host(endpoint)} svarede på ${seconds}s\n`);
+          noteSuccess(endpoint);
           return JSON.parse(text);
         }
         lastError = `HTTP ${response.status} fra ${host(endpoint)} efter ${seconds}s`;
@@ -107,11 +147,12 @@ async function overpass(query) {
       } finally {
         clearTimeout(timer);
       }
+      noteFailure(endpoint);
       process.stdout.write(`    ${lastError}\n`);
       await sleep(REQUEST_SPACING_MS);
     }
     console.log(`    forsøg ${attempt}/${MAX_ATTEMPTS} mislykkedes (${lastError}), venter …`);
-    await sleep(REQUEST_SPACING_MS * attempt);
+    await sleep(Math.min(60_000, 5_000 * attempt));
   }
   throw new Error(`Overpass svarede ikke: ${lastError}`);
 }
@@ -161,9 +202,17 @@ out center qt;`;
 }
 
 /**
- * The roads the signs stand on, with geometry, so each sign can be tied to the direction of its own
- * road. That is what tells a sign on the road you are riding from one on a side road a few metres
- * away — the case that used to announce a town you were only passing.
+ * The roads the signs stand on, and the roads that meet their ends, in one query.
+ *
+ * The road a sign stands on is what tells a sign on the road you are riding from one on a side road
+ * a few metres away. Its neighbours then say which side of the sign the town is on: a town sign is
+ * where the 50 begins, and OpenStreetMap writes that limit on the roads themselves - in Denmark as
+ * source:maxspeed=DK:urban and DK:rural - which is the question the town centre cannot answer when
+ * the road runs across it.
+ *
+ * The sign roads come back with geometry and the neighbours with node lists only. Asking for both
+ * in one query matters: three requests per tile instead of two was enough to tip the public
+ * instances into rate limiting the whole build.
  */
 function roadQueryFor(region, tile) {
   const box = [tile.south, tile.west, tile.north, tile.east].map((v) => v.toFixed(6)).join(',');
@@ -174,26 +223,8 @@ function roadQueryFor(region, tile) {
   return `[out:json][timeout:180];
 ${area}
 ${signs}[~"^traffic_sign(:(forward|backward|both))?$"~"${C.OVERPASS_VALUE_REGEX}",i]->.s;
-way(bn.s)["highway"];
-out geom;`;
-}
-
-/**
- * The roads that meet the ends of the sign roads.
- *
- * A town sign is where the 50 begins, and OpenStreetMap writes that limit on the roads themselves -
- * in Denmark as source:maxspeed=DK:urban and DK:rural. The neighbours therefore say which side of
- * the sign the town is on, which is the question the town centre cannot answer when the road runs
- * across it.
- */
-function joinQueryFor(region, tile) {
-  const box = [tile.south, tile.west, tile.north, tile.east].map((v) => v.toFixed(6)).join(',');
-  const area = region.area ? `area${region.area}->.region;` : '';
-  const signs = region.area ? `node(area.region)(${box})` : `node(${box})`;
-  return `[out:json][timeout:180];
-${area}
-${signs}[~"^traffic_sign(:(forward|backward|both))?$"~"${C.OVERPASS_VALUE_REGEX}",i]->.s;
 way(bn.s)["highway"]->.roads;
+.roads out geom;
 node(w.roads)->.ends;
 way(bn.ends)["highway"];
 out body;`;
@@ -218,33 +249,31 @@ async function collect(region) {
     await sleep(REQUEST_SPACING_MS);
 
     const roadData = await overpass(roadQueryFor(region, tile));
+    const ways = (roadData.elements ?? []).filter((way) => way.type === 'way' && way.nodes?.length);
     const ends = new Set();
-    for (const way of roadData.elements ?? []) {
-      if (way.type !== 'way' || !way.geometry || !way.nodes?.length) continue;
+    for (const way of ways) {
+      if (!way.geometry) continue;
       roads.set(way.id, way);
       ends.add(way.nodes[0]);
       ends.add(way.nodes[way.nodes.length - 1]);
     }
-    await sleep(REQUEST_SPACING_MS);
-
-    const joinData = await overpass(joinQueryFor(region, tile));
     let joined = 0;
-    for (const way of joinData.elements ?? []) {
-      if (way.type !== 'way' || !way.nodes) continue;
+    for (const way of ways) {
       const touching = way.nodes.filter((node) => ends.has(node));
       if (touching.length === 0) continue;
       // Only the nodes at the road ends are carried on; the full node lists would run to gigabytes
-      // over a country.
+      // over a country. The sign roads come back twice, with geometry and without; either carries
+      // the tags the speed zone is read from.
       const kept = joins.get(way.id);
       joins.set(way.id, {
         id: way.id,
         nodes: kept ? [...new Set([...kept.nodes, ...touching])] : touching,
-        tags: way.tags ?? {},
+        tags: way.tags ?? kept?.tags ?? {},
       });
       joined++;
     }
     console.log(`  felt ${index + 1}/${tiles.length}: ${data.elements?.length ?? 0} elementer (${added} nye), ` +
-      `${roadData.elements?.length ?? 0} veje, ${joined} naboveje`);
+      `${roads.size} veje i alt, ${joined} naboveje her`);
     await sleep(REQUEST_SPACING_MS);
   }
   return { elements: [...elements.values()], roads: [...roads.values()], joins: [...joins.values()] };

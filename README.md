@@ -82,7 +82,7 @@ alerts than miss a town.
 
 Only region packs carry road directions: the geometry of every road a sign stands on, plus the roads
 meeting its ends, is far too much to fetch from the saddle, but nothing at all in a nightly build —
-three queries per tile instead of one. Cells fetched live while riding behave as they did before,
+one extra query per tile. Cells fetched live while riding behave as they did before,
 without that check, and take the town centre as the direction into town.
 
 Data is queried from the [Overpass API](https://overpass-api.de/) in grid cells of roughly 5 × 6 km
