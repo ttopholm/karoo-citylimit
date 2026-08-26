@@ -9,18 +9,22 @@
  * The signs are classified and tied to their towns with the same logic the extension uses - the copy
  * in tools/verify-map.html, which tools/verify-map-parity.mjs keeps in step with the Kotlin in core/.
  *
- *   node tools/build-packs.mjs [--region dk] [--out build/packs] [--bounds S,W,N,E] [--endpoint URL]
+ *   node tools/build-packs.mjs [--region dk] [--out build/packs] [--work build/dumps]
+ *                              [--source dump|overpass] [--bounds S,W,N,E] [--endpoint URL]
  *
- * --bounds narrows a region to a smaller area, which is handy for trying the pipeline out without
- * downloading a whole country. --endpoint sends the queries somewhere other than the public Overpass
- * instances, for instance the site's own /api/overpass, which is useful when the public ones have
- * put your address in the corner.
+ * By default the data comes from the country's OpenStreetMap dump, read with osmium: one download
+ * and a minute of filtering, which is what the wiki asks a scheduled build of a whole country to do.
+ * --source overpass takes the older route, querying the public instances tile by tile, and is there
+ * for the day a dump is unavailable. --bounds and --endpoint only apply to that route: --bounds
+ * narrows a region to a smaller area, handy for trying the pipeline out, and --endpoint sends the
+ * queries somewhere other than the public instances.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { collectFromDump } from './osm-dump.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 vm.runInThisContext(
@@ -31,13 +35,19 @@ vm.runInThisContext(
 const C = globalThis.CityLimit;
 
 /**
- * Regions to build. `tiles` splits the area into Overpass queries small enough to answer reliably;
- * places are collected with a margin, so signs near a tile edge still find the town they name.
+ * Regions to build.
+ *
+ * `dump` is the country extract the build normally reads, and is all that is needed. The rest -
+ * `bounds`, `area`, `tile` - belongs to the older route through Overpass, kept behind
+ * --source overpass for the day a dump is unavailable: `tile` splits the area into queries small
+ * enough to answer, and places are collected with a margin so signs near a tile edge still find
+ * the town they name.
  */
 const REGIONS = [
   {
     id: 'dk',
     name: 'Danmark',
+    dump: 'https://download.geofabrik.de/europe/denmark-latest.osm.pbf',
     // The box reaches into Skåne and Schleswig, so signs are clipped to the country itself. Places
     // are not clipped: a sign near the border still has to find the town it names, wherever it is.
     bounds: { south: 54.50, west: 8.00, north: 57.80, east: 15.25 },
@@ -129,6 +139,9 @@ const only = value(args, '--region');
 const outDir = path.resolve(root, value(args, '--out') ?? 'build/packs');
 const boundsOverride = value(args, '--bounds')?.split(',').map(Number);
 const ENDPOINTS = value(args, '--endpoint')?.split(',') ?? DEFAULT_ENDPOINTS;
+const source = value(args, '--source') ?? 'dump';
+const workDir = path.resolve(root, value(args, '--work') ?? 'build/dumps');
+if (source !== 'dump' && source !== 'overpass') throw new Error(`Ukendt kilde: ${source}`);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -406,7 +419,9 @@ function chunk(region, cells) {
 
 async function build(region, generatedAt) {
   console.log(`\n${region.name} (${region.id}):`);
-  const { elements, roads, joins } = await collect(region);
+  const { elements, roads, joins } = source === 'dump'
+    ? await collectFromDump(region, workDir)
+    : await collect(region);
   const { signs, dropped, places } = C.parseResponse({ elements });
   C.attachRoadBearings(signs, roads);
   C.alignEntryHeadings(signs);

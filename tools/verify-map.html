@@ -60,22 +60,15 @@
     <h1>Byskilt – verifikationskort</h1>
     <div class="banner" id="file-warning" hidden>
       Siden er åbnet direkte fra disken (<code style="display:inline;border:none;padding:0">file://</code>),
-      og så sender browseren <code style="display:inline;border:none;padding:0">Origin: null</code>, som Overpass
-      afviser. Server den i stedet lokalt fra repoets rod:
+      og så kan den ikke hente områdepakken. Brug den udgivne side, eller server repoet lokalt:
       <code>python3 -m http.server 8000</code>
       <span id="file-warning-link"></span>
     </div>
     <p class="intro">
-      Henter byskilte fra Overpass for kortudsnittet og kører samme logik som Karoo-udvidelsen:
-      hvilke skilte beholdes, hvilken retning tæller som indkørsel, og hvor ville alarmen udløses.
+      Viser byskiltene fra en områdepakke — nøjagtig de data Karoo'en kører på — og den samme logik
+      som udvidelsen: hvilke skilte beholdes, hvilken retning tæller som indkørsel, og hvor ville
+      alarmen udløses.
     </p>
-
-    <label>Datakilde
-      <select id="source">
-        <option value="pack">Områdepakke (samme data som Karoo'en)</option>
-        <option value="overpass">Overpass (live fra OpenStreetMap)</option>
-      </select>
-    </label>
 
     <div id="pack-controls">
       <label>Område
@@ -89,18 +82,6 @@
         sorteret fra, da pakken blev bygget.</p>
     </div>
 
-    <div id="overpass-controls" hidden>
-      <div class="row">
-        <button id="load" class="primary">Hent skilte for kortudsnittet</button>
-      </div>
-      <label>Overpass-server
-        <select id="endpoint">
-          <option value="overpass-api.de">overpass-api.de</option>
-          <option value="kumi">overpass.kumi.systems</option>
-          <option value="coffee">overpass.private.coffee</option>
-        </select>
-      </label>
-    </div>
     <div id="load-status" class="muted">Ingen data hentet endnu.</div>
 
     <h2>Indstillinger</h2>
@@ -743,54 +724,7 @@
   var loadStatus = element('load-status');
   var simStatus = element('sim-status');
 
-  // Overpass rejects requests from a null origin, so a page opened straight from disk can never
-  // download anything. Say so up front instead of letting it fail as a CORS error.
-  /*
-   * Overpass rejects the query when it arrives with a browser's headers, so a hosted page cannot
-   * call it directly - and a proxy rewrite does not help either, since it passes those headers on.
-   * When hosted, the request goes to /api/overpass, a small function that fetches Overpass itself
-   * with a fixed set of headers. Served from localhost there is no function, so the page falls back
-   * to calling Overpass directly without a referrer, which usually works from a local page.
-   */
-  var SERVERS = {
-    'overpass-api.de': { proxy: '/api/overpass?server=de', direct: 'https://overpass-api.de/api/interpreter' },
-    'kumi': { proxy: '/api/overpass?server=kumi', direct: 'https://overpass.kumi.systems/api/interpreter' },
-    'coffee': { proxy: '/api/overpass?server=coffee', direct: 'https://overpass.private.coffee/api/interpreter' }
-  };
-  var hosted = location.protocol.indexOf('http') === 0 &&
-    location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
-
-  /** Ask the function first when hosted, and keep the direct call as a fallback. */
-  function requestQuery(server, query) {
-    var attempts = [];
-    if (hosted) attempts.push({ url: server.proxy, viaFunction: true });
-    attempts.push({ url: server.direct, viaFunction: false });
-
-    var firstError = null;
-    var next = function (index) {
-      if (index >= attempts.length) return Promise.reject(firstError || new Error('ingen server svarede'));
-      var attempt = attempts[index];
-      return fetch(attempt.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-        body: query,
-        referrerPolicy: 'no-referrer'
-      }).then(function (response) {
-        if (response.ok) return response.text();
-        // The function reports what Overpass told it, which is more useful than a bare status.
-        return response.text().then(function (detail) {
-          throw new Error(attempt.viaFunction && detail ? detail.slice(0, 300) : 'HTTP ' + response.status);
-        });
-      }).catch(function (error) {
-        if (firstError === null) firstError = error;
-        return next(index + 1);
-      });
-    };
-    return next(0);
-  }
-
-  var openedFromDisk = location.protocol === 'file:';
-  if (openedFromDisk) {
+  if (location.protocol === 'file:') {
     element('file-warning').hidden = false;
     var name = location.pathname.split('/').pop() || 'verify-map.html';
     element('file-warning-link').innerHTML =
@@ -892,31 +826,18 @@
     element('stat-places').textContent = data.places.length;
     element('stat-areas').textContent = data.places.filter(function (place) { return place.isArea; }).length;
 
-    var packMode = usingPack() && pack.loaded;
-    element('stat-dropped-row').hidden = packMode;
-    element('stat-places-row').hidden = packMode;
-    element('stat-pack-note').hidden = !packMode;
+    element('stat-dropped-row').hidden = true;
+    element('stat-places-row').hidden = true;
+    element('stat-pack-note').hidden = false;
   }
 
   var PACK_BASE = '/api/packs';
   var pack = { region: null, signs: [], loaded: false };
 
-  function usingPack() { return element('source').value === 'pack'; }
-
   function syncSource() {
-    var packMode = usingPack();
-    element('pack-controls').hidden = !packMode;
-    element('overpass-controls').hidden = packMode;
-    if (packMode && pack.loaded) {
-      showPackInView();
-    } else if (packMode) {
-      loadStatus.textContent = pack.region ? 'Tryk "Hent pakken" for at hente data.' : 'Henter listen over områder…';
-    } else {
-      loadStatus.textContent = 'Tryk "Hent skilte for kortudsnittet".';
-    }
+    if (pack.loaded) showPackInView();
+    else loadStatus.textContent = pack.region ? 'Tryk "Hent pakken" for at hente data.' : 'Henter listen over områder…';
   }
-
-  element('source').addEventListener('change', syncSource);
 
   /** Vis de skilte fra pakken, der ligger i kortudsnittet. */
   function showPackInView() {
@@ -993,40 +914,12 @@
   });
 
   map.on('moveend', function () {
-    if (usingPack() && pack.loaded) showPackInView();
+    if (pack.loaded) showPackInView();
   });
 
   loadRegionList();
   syncSource();
 
-  element('load').addEventListener('click', function () {
-    var bounds = map.getBounds();
-    var box = {
-      south: bounds.getSouth(), west: bounds.getWest(),
-      north: bounds.getNorth(), east: bounds.getEast()
-    };
-    var area = (box.north - box.south) * (box.east - box.west);
-    if (area > 0.5) {
-      loadStatus.innerHTML = '<span class="error">Zoom ind – udsnittet er for stort til én forespørgsel.</span>';
-      return;
-    }
-    var button = element('load');
-    button.disabled = true;
-    loadStatus.textContent = 'Henter fra Overpass …';
-    requestQuery(SERVERS[element('endpoint').value], C.buildQuery(box)).then(function (body) {
-      data = C.parseResponse(body);
-      render();
-      loadStatus.textContent = 'Hentet ' + (data.signs.length + data.dropped.length) + ' skiltenoder for udsnittet.';
-    }).catch(function (error) {
-      var hint = openedFromDisk
-        ? ' Siden er åbnet fra disken – server den over http, se beskeden øverst.'
-        : ' Overpass afviser af og til forespørgsler når serveren er belastet; prøv igen eller vælg en anden server.';
-      loadStatus.innerHTML = '<span class="error">Fejl: ' + escapeHtml(error.message) + '</span>' +
-        '<span class="muted">' + hint + '</span>';
-    }).then(function () {
-      button.disabled = false;
-    });
-  });
 
   ['alertDistance', 'approachCone', 'entryCone', 'unknownDirection'].forEach(function (id) {
     element(id).addEventListener('change', function () {
@@ -1080,7 +973,7 @@
     if (routePoints.length < 2) return;
     var points = reversed ? routePoints.slice().reverse() : routePoints.slice();
     // Ruten kan gå ud over kortudsnittet, så kør mod hele pakken når den er hentet.
-    var signs = (usingPack() && pack.loaded) ? pack.signs : data.signs;
+    var signs = pack.loaded ? pack.signs : data.signs;
     var alerts = C.simulateRide(points, signs, config());
     alertLayer.clearLayers();
     var list = element('alerts');

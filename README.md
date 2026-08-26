@@ -81,9 +81,9 @@ alerts than miss a town.
 ## Sign data
 
 Only region packs carry road directions: the geometry of every road a sign stands on, plus the roads
-meeting its ends, is far too much to fetch from the saddle, but nothing at all in a nightly build —
-one extra query per tile. Cells fetched live while riding behave as they did before,
-without that check, and take the town centre as the direction into town.
+meeting its ends, is far too much to fetch from the saddle, but nothing at all when a whole country
+is read from a dump. Cells fetched live while riding behave as they did before, without that check,
+and take the town centre as the direction into town.
 
 Data is queried from the [Overpass API](https://overpass-api.de/) in grid cells of roughly 5 × 6 km
 and cached on the device for 90 days. Each query returns the sign nodes plus the places used for
@@ -120,26 +120,32 @@ Riding an area once caches it for 90 days, and a loaded route is prefetched cell
 still need a connection the first time. A region pack removes that: it puts a whole country on the
 device before you leave home.
 
-Packs are built by `tools/build-packs.mjs`, which asks Overpass for a country tile by tile, runs the
-same classification and town matching as the extension, and writes the result as grid cells split
-into files under 100 KB — small enough to also come through the Karoo system's HTTP API when the
-device has no Wi-Fi of its own. `.github/workflows/packs.yml` rebuilds them monthly and publishes
-them under the fixed `packs` release, so the download URL never changes. That release is marked as a
-pre-release on purpose: GitHub resolves `/releases/latest` to the newest release that is neither
-draft nor pre-release, and the app reads `manifest.json` from there to find updates — an ordinary
-packs release takes that spot and the update check starts returning 404. Overpass is then queried
-once per rebuild instead of once per rider per area.
+Packs are built by `tools/build-packs.mjs`, which runs the same classification and town matching as
+the extension and writes the result as grid cells split into files under 100 KB — small enough to
+also come through the Karoo system's HTTP API when the device has no Wi-Fi of its own.
+`.github/workflows/packs.yml` rebuilds them monthly and publishes them under the fixed `packs`
+release, so the download URL never changes. That release is marked as a pre-release on purpose:
+GitHub resolves `/releases/latest` to the newest release that is neither draft nor pre-release, and
+the app reads `manifest.json` from there to find updates — an ordinary packs release takes that spot
+and the update check starts returning 404.
 
-Building a country is a long conversation with a donated service that is often busy. The builder asks
-the free globally-covering instances [the OpenStreetMap wiki
-lists](https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances) in turn — the
-rest of that list is behind an API key or holds one region only, and a region-only instance would
-answer a Danish query with an empty result rather than an error. It leaves a gap between queries to
-the same instance, and when one answers 429 or 406 it reads `/api/status` to learn when its next slot
-frees and waits that long, never less than the 30 seconds the usage policy asks for.
-An instance that fails three times in a row is passed over for a while, and a tile that will not
-answer at all is set aside and asked again at the end of the run rather than losing the country to
-one bad minute.
+The data comes from the country's [OpenStreetMap dump](https://download.geofabrik.de), read with
+[osmium](https://osmcode.org/osmium-tool/): one download and about a minute of filtering, which is
+what the [usage
+policy](https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances) asks a
+scheduled build of a whole country to do. Denmark takes a little over two minutes end to end. The
+older route through Overpass — tile by tile, two hours on a good day and a rate limit on a bad one —
+is still there behind `--source overpass` for the day a dump is unavailable.
+
+A dump also removes the tile seams. Places no longer come from a margin around each tile that has to
+be large enough; the whole country is in hand at once, so a sign always finds the same town whichever
+part of the map it sits in. What it adds is a border: an extract is cut with some slack, so a
+Denmark pack carries a handful of signs from the first village on the German side. A rider crossing
+the border gets an alert rather than silence, which is no loss.
+
+Before the packs replace what is published, `tools/check-packs.mjs` holds the new ones up against the
+old. A build that fails is easy to see; one that half-works is not, and a pack quietly short of signs
+is silent exactly where a town used to be announced. A drop of more than 5% stops the run.
 
 On the device, *Download a region* in the settings screen lists what is available and installs a pack
 straight into the sign cache. Denmark holds around 9,000 town-entry signs, which comes to roughly a
@@ -187,8 +193,8 @@ python3 -m http.server 8000     # from the repository root
 # then open http://localhost:8000/tools/verify-map.html
 ```
 
-Opening the file directly from disk does not work: the browser then sends `Origin: null`, which
-Overpass rejects (406), so no data can be downloaded. The page says so if you try.
+Opening the file directly from disk does not work: `/api/packs/…` is then a path on your filesystem
+rather than a URL, so the pack cannot be fetched. The page says so if you try.
 
 For a permanent URL — handy for checking an area from a phone — the page can be hosted as a static
 site. `netlify.toml` in the repository root configures that already: at netlify.com choose *Add new
@@ -196,18 +202,17 @@ site → Import an existing project*, pick this repository, and deploy. There is
 `tools/` directory is published and `/` redirects to the map. Every push to the default branch
 redeploys it.
 
-Hosted, the page reaches both the packs (`/api/packs/…`) and Overpass (`/api/overpass`) through
-functions on its own origin. The packs need it because GitHub redirects release downloads to a host
-that sends no CORS headers; Overpass needs it for a different reason. Overpass serves server-to-server requests happily but answers the same query from a
-browser with `406`, which then surfaces as a CORS error because the error response carries no CORS
-headers; going through the proxy means Overpass sees an ordinary server call. Served from localhost
-there is no proxy, so the page calls Overpass directly with `referrerPolicy: no-referrer`. GitHub Pages works just as well if you would rather not add a second service — say the
-word and the workflow for it is a few lines.
+Hosted, the page reaches the packs (`/api/packs/…`) through a function on its own origin, because
+GitHub redirects release downloads to a host that sends no CORS headers. That is the only function
+the site has: the page never talks to Overpass, which is both unnecessary — the pack is the data the
+Karoo carries — and something the [usage
+policy](https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances) asks apps
+deployed on platforms like netlify.app not to do. GitHub Pages works just as well if you would
+rather not add a second service — say the word and the workflow for it is a few lines.
 
-* Reads the published region pack by default — the same data the Karoo carries — so checking an area
-  needs no Overpass at all. The pack loads once and stays in the browser, so panning is instant.
-  Switching the data source to *Overpass (live)* queries OpenStreetMap directly instead, which is the
-  way to see signs that have been mapped since the last pack was built.
+* Reads the published region pack — the same data the Karoo carries. It loads once and stays in the
+  browser, so panning is instant. Signs mapped since the last pack was built are not in it; rebuild
+  the packs to see them.
 * Draws every town-entry sign with an arrow for the direction that counts as riding in, marks signs
   with no known direction in orange, and greys out nodes that were dropped for carrying only the
   crossed-out sign. Clicking a sign shows its OSM tags and which place node it was matched to.

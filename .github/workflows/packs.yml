@@ -9,6 +9,10 @@ name: Region packs
 # release makes them "latest", which breaks the app's own update check - it reads manifest.json from
 # /releases/latest/download/, and the packs release has no such file.
 #
+# The data comes from each country's OpenStreetMap dump, read with osmium: one download and about a
+# minute of filtering. Overpass is not asked - it is a donated service sized for small interactive
+# queries, and its usage policy points a scheduled build of a whole country at the regional dumps.
+#
 # Runs monthly, since signs in OpenStreetMap change slowly, and on demand from the Actions tab.
 
 on:
@@ -27,17 +31,18 @@ permissions:
 jobs:
   packs:
     runs-on: ubuntu-latest
-    # Overpass is a donated service and the builder waits between queries, so give it room. Each
-    # tile costs two queries - the signs, then the roads they stand on with their neighbours - and
-    # Denmark runs an hour or two. The ceiling is for the days when the public instances take turns
-    # being down and every query is retried.
-    timeout-minutes: 330
+    # Denmark is a 500 MB download and about two minutes of work. The ceiling is for a slow mirror
+    # and for the day someone adds a country the size of Germany.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      - name: Install osmium
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
 
       - name: The map's logic still matches the extension
         run: node tools/verify-map-parity.mjs
@@ -49,6 +54,12 @@ jobs:
           else
             node tools/build-packs.mjs --out build/packs
           fi
+
+      # A country read from a dump either works or fails loudly, but a truncated download or a
+      # mis-cut extract could still leave a pack quietly short of signs. Compare against what is
+      # published before replacing it.
+      - name: The new packs are not smaller than the published ones
+        run: node tools/check-packs.mjs build/packs
 
       - name: Summarise
         run: |
@@ -72,7 +83,7 @@ jobs:
             gh release create packs \
               --prerelease \
               --title "Region packs" \
-              --notes "Sign data prepared for offline use, rebuilt monthly from OpenStreetMap via the Overpass API. Downloaded from the extension's settings screen.
+              --notes "Sign data prepared for offline use, rebuilt monthly from the OpenStreetMap country dumps. Downloaded from the extension's settings screen.
 
           Marked as a pre-release on purpose, so it never becomes the repository's \"latest\" release: the app reads manifest.json from there to find updates."
           fi
