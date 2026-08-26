@@ -27,8 +27,10 @@ permissions:
 jobs:
   packs:
     runs-on: ubuntu-latest
-    # Overpass is a donated service and the builder waits between queries, so give it room.
-    timeout-minutes: 120
+    # Overpass is a donated service and the builder waits between queries, so give it room. Each
+    # tile now costs two queries - the signs, then the roads they stand on - so Denmark runs about
+    # an hour and a half.
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
