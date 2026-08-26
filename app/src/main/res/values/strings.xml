@@ -52,6 +52,11 @@
     <string name="status_karoo_connected">Karoo system: connected</string>
     <string name="status_karoo_disconnected">Karoo system: not connected</string>
 
+    <string name="regions_installed_at">On the device, built %1$s</string>
+    <string name="regions_update">A newer build is available, %1$s</string>
+    <string name="regions_not_installed">Not downloaded</string>
+    <string name="regions_refresh">Update</string>
+
     <string name="meters_format">%1$d m</string>
     <string name="seconds_format">%1$d s</string>
 

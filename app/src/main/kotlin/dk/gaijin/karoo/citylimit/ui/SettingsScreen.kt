@@ -39,6 +39,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
     val position by viewModel.position.collectAsStateWithLifecycle()
     val regions by viewModel.regions.collectAsStateWithLifecycle()
     val packStatus by viewModel.packStatus.collectAsStateWithLifecycle()
+    val installedPacks by viewModel.installedPacks.collectAsStateWithLifecycle()
     val testDetail = stringResource(R.string.alert_detail, settings.alertDistanceMeters)
     val testNotification = stringResource(R.string.action_test_alert)
     val testAlert by viewModel.testAlert.collectAsStateWithLifecycle()
@@ -124,6 +125,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
         RegionSection(
             regions = regions,
+            installed = installedPacks,
             status = packStatus,
             onInstall = viewModel::installRegion,
             onRetry = viewModel::loadRegions,
@@ -172,6 +174,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 @Composable
 private fun RegionSection(
     regions: List<RegionPack>,
+    installed: Map<String, String>,
     status: PackStatus,
     onInstall: (RegionPack) -> Unit,
     onRetry: () -> Unit,
@@ -196,15 +199,29 @@ private fun RegionSection(
                     .padding(top = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                val installedAt = installed[region.id]
+                val outdated = installedAt != null && region.generatedAt != null && installedAt != region.generatedAt
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = region.name, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
                     Text(
                         text = stringResource(R.string.regions_size, region.signs, region.bytes / 1024),
                         style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                     )
+                    Text(
+                        text = when {
+                            outdated -> stringResource(R.string.regions_update, shortDate(region.generatedAt))
+                            installedAt != null -> stringResource(R.string.regions_installed_at, shortDate(installedAt))
+                            else -> stringResource(R.string.regions_not_installed)
+                        },
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    )
                 }
                 Button(onClick = { onInstall(region) }, enabled = !busy) {
-                    Text(stringResource(R.string.regions_download))
+                    Text(
+                        stringResource(
+                            if (installedAt == null) R.string.regions_download else R.string.regions_refresh,
+                        ),
+                    )
                 }
             }
         }
@@ -329,3 +346,7 @@ private fun <T> ChoiceRow(
 
 private fun formatTimestamp(millis: Long): String =
     DateFormat.getDateInstance(DateFormat.SHORT).format(Date(millis))
+
+/** Packs report their build time as an ISO timestamp; the date is all the screen needs. */
+private fun shortDate(isoTimestamp: String?): String =
+    isoTimestamp?.substringBefore('T').orEmpty()
