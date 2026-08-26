@@ -129,19 +129,22 @@ GitHub resolves `/releases/latest` to the newest release that is neither draft n
 the app reads `manifest.json` from there to find updates — an ordinary packs release takes that spot
 and the update check starts returning 404.
 
-The data comes from the country's [OpenStreetMap dump](https://download.geofabrik.de), read with
+The data comes from the country's OpenStreetMap extract, read with
 [osmium](https://osmcode.org/osmium-tool/): one download and about a minute of filtering, which is
 what the [usage
 policy](https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances) asks a
-scheduled build of a whole country to do. Denmark takes a little over two minutes end to end. The
-older route through Overpass — tile by tile, two hours on a good day and a rate limit on a bad one —
-is still there behind `--source overpass` for the day a dump is unavailable.
+scheduled build of a whole country to do. Denmark takes a little over two minutes end to end. Each
+region names its mirrors in order of preference — [Geofabrik](https://download.geofabrik.de) first,
+since that is the canonical cut, then [OSM France](https://download.openstreetmap.fr/extracts/) —
+and every one is tried before a round is given up on, because a build that stops when one host will
+not answer is a build that does not run. The older route through Overpass — tile by tile, two hours
+on a good day and a rate limit on a bad one — is still there behind `--source overpass`.
 
 A dump also removes the tile seams. Places no longer come from a margin around each tile that has to
 be large enough; the whole country is in hand at once, so a sign always finds the same town whichever
-part of the map it sits in. What it adds is a border: an extract is cut with some slack, so a
-Denmark pack carries a handful of signs from the first village on the German side. A rider crossing
-the border gets an alert rather than silence, which is no loss.
+part of the map it sits in. What it adds is a border, and how much depends on how the mirror cut it:
+Geofabrik's Denmark carries three signs from the German side, OSM France's nineteen. A rider crossing
+the border gets an alert rather than silence, which is no loss either way.
 
 Before the packs replace what is published, `tools/check-packs.mjs` holds the new ones up against the
 old. A build that fails is easy to see; one that half-works is not, and a pack quietly short of signs

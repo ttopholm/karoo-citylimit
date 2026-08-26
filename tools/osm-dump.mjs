@@ -121,18 +121,60 @@ export async function collectFromDump(region, workDir, log = console.log) {
   return { elements: [...signs, ...places], roads: drawn, joins: [...joins.values()] };
 }
 
-/* The dump is large and the pack build is long; a download that is already there is reused. */
-async function download(url, target, log) {
-  if (!url) throw new Error('Regionen har ingen dump-adresse');
+const DOWNLOAD_ROUNDS = 3;
+const DOWNLOAD_TIMEOUT_MS = 20 * 60_000;
+
+/*
+ * The dump is large and the pack build is long, so a download that is already there is reused.
+ *
+ * A region names more than one mirror, and every one of them is tried before the round is given up
+ * on. Geofabrik is the one to prefer - it is the canonical cut and the boundaries are tight - but a
+ * build that stops because one host will not answer is a build that does not run: the first attempt
+ * from a GitHub runner never got a connection to it at all.
+ */
+async function download(mirrors, target, log) {
+  const urls = [mirrors].flat().filter(Boolean);
+  if (urls.length === 0) throw new Error('Regionen har ingen dump-adresse');
   if (fs.existsSync(target) && fs.statSync(target).size > 0) {
     log(`  bruger ${path.basename(target)} der allerede er hentet (${megabytes(target)} MB)`);
     return;
   }
-  log(`  henter ${url}`);
-  const response = await fetch(url, { redirect: 'follow' });
-  if (!response.ok || !response.body) throw new Error(`${url} svarede ${response.status}`);
+
+  let complaint = 'intet forsøg';
+  for (let round = 1; round <= DOWNLOAD_ROUNDS; round++) {
+    for (const url of urls) {
+      log(`  henter ${url}`);
+      try {
+        await fetchTo(url, target, log);
+        return;
+      } catch (error) {
+        complaint = `${new URL(url).host}: ${error.message}`;
+        log(`    ${complaint}`);
+      }
+    }
+    if (round < DOWNLOAD_ROUNDS) {
+      log(`  runde ${round}/${DOWNLOAD_ROUNDS} mislykkedes, venter …`);
+      await new Promise((resolve) => setTimeout(resolve, 15_000 * round));
+    }
+  }
+  throw new Error(`Ingen af spejlene svarede: ${complaint}`);
+}
+
+async function fetchTo(url, target, log) {
   const partial = `${target}.part`;
+  fs.rmSync(partial, { force: true });
+  const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+  if (!response.ok || !response.body) throw new Error(`svarede ${response.status}`);
   await pipeline(response.body, fs.createWriteStream(partial));
+
+  // A truncated body arrives as a perfectly good file, and osmium would then read a country with a
+  // piece missing. The length the server promised is the cheapest way to catch it.
+  const promised = Number(response.headers.get('content-length'));
+  const written = fs.statSync(partial).size;
+  if (Number.isFinite(promised) && promised > 0 && written !== promised) {
+    fs.rmSync(partial, { force: true });
+    throw new Error(`fik ${written} af ${promised} byte`);
+  }
   fs.renameSync(partial, target);
   log(`  hentet, ${megabytes(target)} MB`);
 }

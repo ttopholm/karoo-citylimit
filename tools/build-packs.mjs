@@ -37,7 +37,8 @@ const C = globalThis.CityLimit;
 /**
  * Regions to build.
  *
- * `dump` is the country extract the build normally reads, and is all that is needed. The rest -
+ * `dump` lists the mirrors the country extract is fetched from, in order of preference, and is all
+ * that is needed. The rest -
  * `bounds`, `area`, `tile` - belongs to the older route through Overpass, kept behind
  * --source overpass for the day a dump is unavailable: `tile` splits the area into queries small
  * enough to answer, and places are collected with a margin so signs near a tile edge still find
@@ -47,7 +48,10 @@ const REGIONS = [
   {
     id: 'dk',
     name: 'Danmark',
-    dump: 'https://download.geofabrik.de/europe/denmark-latest.osm.pbf',
+    dump: [
+      'https://download.geofabrik.de/europe/denmark-latest.osm.pbf',
+      'https://download.openstreetmap.fr/extracts/europe/denmark.osm.pbf',
+    ],
     // The box reaches into Skåne and Schleswig, so signs are clipped to the country itself. Places
     // are not clipped: a sign near the border still has to find the town it names, wherever it is.
     bounds: { south: 54.50, west: 8.00, north: 57.80, east: 15.25 },
