@@ -9,18 +9,22 @@
  * The signs are classified and tied to their towns with the same logic the extension uses - the copy
  * in tools/verify-map.html, which tools/verify-map-parity.mjs keeps in step with the Kotlin in core/.
  *
- *   node tools/build-packs.mjs [--region dk] [--out build/packs] [--bounds S,W,N,E] [--endpoint URL]
+ *   node tools/build-packs.mjs [--region dk] [--out build/packs] [--work build/dumps]
+ *                              [--source dump|overpass] [--bounds S,W,N,E] [--endpoint URL]
  *
- * --bounds narrows a region to a smaller area, which is handy for trying the pipeline out without
- * downloading a whole country. --endpoint sends the queries somewhere other than the public Overpass
- * instances, for instance the site's own /api/overpass, which is useful when the public ones have
- * put your address in the corner.
+ * By default the data comes from the country's OpenStreetMap dump, read with osmium: one download
+ * and a minute of filtering, which is what the wiki asks a scheduled build of a whole country to do.
+ * --source overpass takes the older route, querying the public instances tile by tile, and is there
+ * for the day a dump is unavailable. --bounds and --endpoint only apply to that route: --bounds
+ * narrows a region to a smaller area, handy for trying the pipeline out, and --endpoint sends the
+ * queries somewhere other than the public instances.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { collectFromDump } from './osm-dump.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 vm.runInThisContext(
@@ -31,13 +35,19 @@ vm.runInThisContext(
 const C = globalThis.CityLimit;
 
 /**
- * Regions to build. `tiles` splits the area into Overpass queries small enough to answer reliably;
- * places are collected with a margin, so signs near a tile edge still find the town they name.
+ * Regions to build.
+ *
+ * `dump` is the country extract the build normally reads, and is all that is needed. The rest -
+ * `bounds`, `area`, `tile` - belongs to the older route through Overpass, kept behind
+ * --source overpass for the day a dump is unavailable: `tile` splits the area into queries small
+ * enough to answer, and places are collected with a margin so signs near a tile edge still find
+ * the town they name.
  */
 const REGIONS = [
   {
     id: 'dk',
     name: 'Danmark',
+    dump: 'https://download.geofabrik.de/europe/denmark-latest.osm.pbf',
     // The box reaches into Skåne and Schleswig, so signs are clipped to the country itself. Places
     // are not clipped: a sign near the border still has to find the town it names, wherever it is.
     bounds: { south: 54.50, west: 8.00, north: 57.80, east: 15.25 },
@@ -46,10 +56,20 @@ const REGIONS = [
   },
 ];
 
+/**
+ * The free instances with global coverage listed on the OpenStreetMap wiki, in the order they are
+ * asked. They all serve the same data and take no credentials. The rest of that list is either
+ * behind an API key or holds one region only - and a region-only instance would answer a Danish
+ * query with an empty result rather than an error, which is the one failure this build must not
+ * have. overpass.kumi.systems is not a fourth instance: it is what private.coffee used to be
+ * called, so asking both only asked the same busy server twice.
+ *
+ * https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances
+ */
 const DEFAULT_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
 ];
 
 const USER_AGENT = 'karoo-citylimit-pack-builder/1.0 (+https://github.com/ttopholm/karoo-citylimit)';
@@ -61,7 +81,26 @@ const MAX_CHUNK_BYTES = 80_000;
 const PLACE_MARGIN_METERS = 5_000;
 
 const REQUEST_SPACING_MS = 4_000;
-const MAX_ATTEMPTS = 8;
+const MAX_ATTEMPTS = 12;
+
+/**
+ * Overpass hands out a couple of query slots per address, and GitHub runners share addresses with
+ * whoever else is querying from them, so a rate limit can arrive through no fault of this build.
+ * Leaving a gap between two queries to the same instance keeps us from being the cause.
+ */
+const SAME_HOST_GAP_MS = 12_000;
+
+/** Longest wait honoured when an instance says when its next slot frees. */
+const MAX_SLOT_WAIT_MS = 300_000;
+
+/**
+ * The usage policy asks for a 30 second pause after a 429 or a 406 before the next request. When
+ * the instance says how long its next slot really is, that wins - it is never shorter than this.
+ */
+const TOLD_OFF_WAIT_MS = 30_000;
+
+/** However patient the retries are, one query does not get to hold up the build all day. */
+const MAX_QUERY_MILLIS = 15 * 60_000;
 
 /**
  * The public Overpass instances queue requests; give up on one and try the next. An instance that
@@ -80,11 +119,29 @@ const REQUEST_TIMEOUT_MS = 90_000;
 const SICK_AFTER_FAILURES = 3;
 const RESTED_AFTER_REQUESTS = 20;
 
+/** An instance's own account of when it will take another query, from /api/status. */
+async function slotWaitMillis(endpoint) {
+  try {
+    const response = await fetch(endpoint.replace('/api/interpreter', '/api/status'), {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) return 0;
+    const seconds = /in (\d+) seconds/.exec(await response.text())?.[1];
+    return seconds ? Math.min(MAX_SLOT_WAIT_MS, (Number(seconds) + 2) * 1000) : 0;
+  } catch {
+    return 0;
+  }
+}
+
 const args = process.argv.slice(2);
 const only = value(args, '--region');
 const outDir = path.resolve(root, value(args, '--out') ?? 'build/packs');
 const boundsOverride = value(args, '--bounds')?.split(',').map(Number);
 const ENDPOINTS = value(args, '--endpoint')?.split(',') ?? DEFAULT_ENDPOINTS;
+const source = value(args, '--source') ?? 'dump';
+const workDir = path.resolve(root, value(args, '--work') ?? 'build/dumps');
+if (source !== 'dump' && source !== 'overpass') throw new Error(`Ukendt kilde: ${source}`);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -95,18 +152,24 @@ function value(list, flag) {
   return index >= 0 ? list[index + 1] : undefined;
 }
 
-const health = new Map(ENDPOINTS.map((endpoint) => [endpoint, { failures: 0, restedAt: 0 }]));
+const health = new Map(ENDPOINTS.map((endpoint) => [endpoint, { failures: 0, restedAt: 0, readyAt: 0 }]));
 let requestCount = 0;
 
-/** The instances worth asking now: the ones not resting, or the least sick if they all are. */
+/**
+ * The instances worth asking now: the ones not resting, or the least sick if they all are, soonest
+ * free first. The order matters - an instance waiting out a rate limit must not hold up one that is
+ * free this second.
+ */
 function endpointsToTry() {
   const awake = ENDPOINTS.filter((endpoint) => health.get(endpoint).restedAt <= requestCount);
-  if (awake.length > 0) return awake;
-  return [...ENDPOINTS].sort((a, b) => health.get(a).failures - health.get(b).failures).slice(0, 1);
+  const worth = awake.length > 0
+    ? awake
+    : [...ENDPOINTS].sort((a, b) => health.get(a).failures - health.get(b).failures).slice(0, 1);
+  return [...worth].sort((a, b) => health.get(a).readyAt - health.get(b).readyAt);
 }
 
 function noteSuccess(endpoint) {
-  health.set(endpoint, { failures: 0, restedAt: 0 });
+  health.set(endpoint, { failures: 0, restedAt: 0, readyAt: Date.now() + SAME_HOST_GAP_MS });
 }
 
 function noteFailure(endpoint) {
@@ -122,8 +185,12 @@ function noteFailure(endpoint) {
 async function overpass(query) {
   let lastError = 'ingen forsøg';
   requestCount++;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  const giveUpAt = Date.now() + MAX_QUERY_MILLIS;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS && Date.now() < giveUpAt; attempt++) {
     for (const endpoint of endpointsToTry()) {
+      const state = health.get(endpoint);
+      const gap = state.readyAt - Date.now();
+      if (gap > 0) await sleep(gap);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
       const startedAt = Date.now();
@@ -142,17 +209,25 @@ async function overpass(query) {
           return JSON.parse(text);
         }
         lastError = `HTTP ${response.status} fra ${host(endpoint)} efter ${seconds}s`;
+        if (response.status === 429 || response.status === 406) {
+          // The instance knows when it will take another query; asking sooner only spends its time.
+          const wait = Math.max(TOLD_OFF_WAIT_MS, await slotWaitMillis(endpoint));
+          state.readyAt = Date.now() + wait;
+          lastError += `, spørger igen om ${Math.round(wait / 1000)}s`;
+        }
       } catch (error) {
         lastError = `${host(endpoint)}: ${error.name === 'AbortError' ? 'timeout' : error.message}`;
       } finally {
         clearTimeout(timer);
       }
       noteFailure(endpoint);
+      state.readyAt = Math.max(state.readyAt, Date.now() + SAME_HOST_GAP_MS);
       process.stdout.write(`    ${lastError}\n`);
       await sleep(REQUEST_SPACING_MS);
     }
-    console.log(`    forsøg ${attempt}/${MAX_ATTEMPTS} mislykkedes (${lastError}), venter …`);
-    await sleep(Math.min(60_000, 5_000 * attempt));
+    const pause = Math.min(120_000, 10_000 * attempt);
+    console.log(`    forsøg ${attempt}/${MAX_ATTEMPTS} mislykkedes (${lastError}), venter ${pause / 1000}s …`);
+    await sleep(pause);
   }
   throw new Error(`Overpass svarede ikke: ${lastError}`);
 }
@@ -236,7 +311,8 @@ async function collect(region) {
   const joins = new Map();
   const tiles = tilesOf(region);
   console.log(`  ${tiles.length} felter at hente`);
-  for (const [index, tile] of tiles.entries()) {
+
+  async function fetchTile(tile, label) {
     const data = await overpass(queryFor(region, tile));
     let added = 0;
     for (const element of data.elements ?? []) {
@@ -272,9 +348,28 @@ async function collect(region) {
       });
       joined++;
     }
-    console.log(`  felt ${index + 1}/${tiles.length}: ${data.elements?.length ?? 0} elementer (${added} nye), ` +
+    console.log(`  felt ${label}: ${data.elements?.length ?? 0} elementer (${added} nye), ` +
       `${roads.size} veje i alt, ${joined} naboveje her`);
     await sleep(REQUEST_SPACING_MS);
+  }
+
+  // A tile that will not answer now often answers half an hour later, when whatever was wrong with
+  // the instance has passed. Losing an hour of a country to one bad minute is not worth it, so the
+  // failures are gathered and asked again at the end - and only then allowed to stop the build.
+  const missed = [];
+  for (const [index, tile] of tiles.entries()) {
+    try {
+      await fetchTile(tile, `${index + 1}/${tiles.length}`);
+    } catch (error) {
+      console.log(`  felt ${index + 1}/${tiles.length} sprang over: ${error.message}`);
+      missed.push([index, tile]);
+    }
+  }
+  if (missed.length > 0) {
+    console.log(`  ${missed.length} felter gav op; prøver dem igen`);
+    for (const [index, tile] of missed) {
+      await fetchTile(tile, `${index + 1}/${tiles.length} (anden runde)`);
+    }
   }
   return { elements: [...elements.values()], roads: [...roads.values()], joins: [...joins.values()] };
 }
@@ -324,7 +419,9 @@ function chunk(region, cells) {
 
 async function build(region, generatedAt) {
   console.log(`\n${region.name} (${region.id}):`);
-  const { elements, roads, joins } = await collect(region);
+  const { elements, roads, joins } = source === 'dump'
+    ? await collectFromDump(region, workDir)
+    : await collect(region);
   const { signs, dropped, places } = C.parseResponse({ elements });
   C.attachRoadBearings(signs, roads);
   C.alignEntryHeadings(signs);
