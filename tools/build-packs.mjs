@@ -47,15 +47,19 @@ const REGIONS = [
 ];
 
 /**
- * Public Overpass instances, in the order they are asked. They all serve the same OpenStreetMap
- * data and take no credentials; the second is a mirror that has answered every query put to it
- * while the German instance was rate limiting, and is here so there is somewhere to go.
+ * The free instances with global coverage listed on the OpenStreetMap wiki, in the order they are
+ * asked. They all serve the same data and take no credentials. The rest of that list is either
+ * behind an API key or holds one region only - and a region-only instance would answer a Danish
+ * query with an empty result rather than an error, which is the one failure this build must not
+ * have. overpass.kumi.systems is not a fourth instance: it is what private.coffee used to be
+ * called, so asking both only asked the same busy server twice.
+ *
+ * https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances
  */
 const DEFAULT_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
 ];
 
 const USER_AGENT = 'karoo-citylimit-pack-builder/1.0 (+https://github.com/ttopholm/karoo-citylimit)';
@@ -78,6 +82,12 @@ const SAME_HOST_GAP_MS = 12_000;
 
 /** Longest wait honoured when an instance says when its next slot frees. */
 const MAX_SLOT_WAIT_MS = 300_000;
+
+/**
+ * The usage policy asks for a 30 second pause after a 429 or a 406 before the next request. When
+ * the instance says how long its next slot really is, that wins - it is never shorter than this.
+ */
+const TOLD_OFF_WAIT_MS = 30_000;
 
 /** However patient the retries are, one query does not get to hold up the build all day. */
 const MAX_QUERY_MILLIS = 15 * 60_000;
@@ -186,13 +196,11 @@ async function overpass(query) {
           return JSON.parse(text);
         }
         lastError = `HTTP ${response.status} fra ${host(endpoint)} efter ${seconds}s`;
-        if (response.status === 429) {
+        if (response.status === 429 || response.status === 406) {
           // The instance knows when it will take another query; asking sooner only spends its time.
-          const wait = await slotWaitMillis(endpoint);
-          if (wait > 0) {
-            state.readyAt = Date.now() + wait;
-            lastError += `, næste plads om ${Math.round(wait / 1000)}s`;
-          }
+          const wait = Math.max(TOLD_OFF_WAIT_MS, await slotWaitMillis(endpoint));
+          state.readyAt = Date.now() + wait;
+          lastError += `, spørger igen om ${Math.round(wait / 1000)}s`;
         }
       } catch (error) {
         lastError = `${host(endpoint)}: ${error.name === 'AbortError' ? 'timeout' : error.message}`;

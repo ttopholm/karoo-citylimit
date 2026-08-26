@@ -131,8 +131,12 @@ packs release takes that spot and the update check starts returning 404. Overpas
 once per rebuild instead of once per rider per area.
 
 Building a country is a long conversation with a donated service that is often busy. The builder asks
-several public instances in turn, leaves a gap between queries to the same one, and when an instance
-answers 429 it reads `/api/status` to learn when its next slot frees and waits exactly that long.
+the free globally-covering instances [the OpenStreetMap wiki
+lists](https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances) in turn — the
+rest of that list is behind an API key or holds one region only, and a region-only instance would
+answer a Danish query with an empty result rather than an error. It leaves a gap between queries to
+the same instance, and when one answers 429 or 406 it reads `/api/status` to learn when its next slot
+frees and waits that long, never less than the 30 seconds the usage policy asks for.
 An instance that fails three times in a row is passed over for a while, and a tile that will not
 answer at all is set aside and asked again at the end of the run rather than losing the country to
 one bad minute.
