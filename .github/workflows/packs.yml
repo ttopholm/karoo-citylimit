@@ -29,11 +29,38 @@ permissions:
   contents: write
 
 jobs:
-  packs:
+  # Which countries this run covers. A country is built on its own runner: Germany is a five
+  # gigabyte download where Denmark is half a one, and one country failing should not take the
+  # others with it.
+  plan:
     runs-on: ubuntu-latest
-    # Denmark is a 500 MB download and about two minutes of work. The ceiling is for a slow mirror
-    # and for the day someone adds a country the size of Germany.
-    timeout-minutes: 90
+    outputs:
+      regions: ${{ steps.list.outputs.regions }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - id: list
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.region }}" ]; then
+            printf 'regions=["%s"]\n' "${{ inputs.region }}" >> "$GITHUB_OUTPUT"
+          else
+            printf 'regions=%s\n' "$(node tools/build-packs.mjs --list)" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      # One country's mirror having a bad day is no reason to leave the rest unbuilt.
+      fail-fast: false
+      matrix:
+        region: ${{ fromJSON(needs.plan.outputs.regions) }}
+    # Denmark is two minutes of work; Germany is ten times the data. The ceiling is for a slow
+    # mirror, not for the build itself.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -44,22 +71,60 @@ jobs:
       - name: Install osmium
         run: sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
 
+      # Germany is five gigabytes of dump and another one and a half of roads filtered out of it,
+      # and France is the same again. The runner ships with several gigabytes of toolchains this
+      # build never touches, and they are worth more as free space.
+      - name: Make room for the big countries
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost || true
+          df -h /
+
       - name: The map's logic still matches the extension
         run: node tools/verify-map-parity.mjs
 
-      - name: Build the packs
+      - name: Build ${{ matrix.region }}
+        run: node tools/build-packs.mjs --region "${{ matrix.region }}" --out build/packs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pack-${{ matrix.region }}
+          path: build/packs
+          retention-days: 1
+
+  publish:
+    needs: build
+    # A country that failed keeps the pack it already had on the release, so the ones that did
+    # build are still worth publishing.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pack-*
+          merge-multiple: true
+          path: build/packs
+
+      - name: Nothing to publish?
         run: |
-          if [ -n "${{ inputs.region }}" ]; then
-            node tools/build-packs.mjs --region "${{ inputs.region }}" --out build/packs
-          else
-            node tools/build-packs.mjs --out build/packs
-          fi
+          set -euo pipefail
+          ls build/packs/*.json >/dev/null
 
       # A country read from a dump either works or fails loudly, but a truncated download or a
       # mis-cut extract could still leave a pack quietly short of signs. Compare against what is
       # published before replacing it.
       - name: The new packs are not smaller than the published ones
         run: node tools/check-packs.mjs build/packs
+
+      # Only the countries built this run are in hand, so the catalogue keeps the entries of the
+      # ones that were not - otherwise they would vanish from the app's list.
+      - name: Write the catalogue
+        run: node tools/merge-catalog.mjs build/packs
 
       - name: Summarise
         run: |

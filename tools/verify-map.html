@@ -220,21 +220,19 @@
    */
   function attachRoadBearings(signs, ways) {
     var AGREEMENT_DEG = 30;
+    /* Skiltet er en knude i vejen, så vejene slås op på knuden. Danmark klarede sig med at måle
+       afstanden til hvert punkt i hver vej, men det er skilte gange veje: i Tyskland er det 130.000
+       gange 190.000, og så bliver bygningen aldrig færdig. */
+    var waysAt = indexWaysByNode(ways);
     signs.forEach(function (sign) {
       var bearings = [];
-      ways.forEach(function (way) {
+      (waysAt.get(sign.id) || []).forEach(function (way) {
         if (!way.geometry || way.geometry.length < 2) return;
-        var index = -1, best = 3;  // meter: skiltet er en knude i vejen, så det er praktisk talt 0
-        way.geometry.forEach(function (point, j) {
-          var dx = (point.lon - sign.position.lng) * 111320 * Math.cos(toRad(sign.position.lat));
-          var dy = (point.lat - sign.position.lat) * 111320;
-          var d = Math.sqrt(dx * dx + dy * dy);
-          if (d < best) { best = d; index = j; }
-        });
+        var index = way.nodes.indexOf(sign.id);
         if (index < 0) return;
         var a = way.geometry[Math.max(0, index - 1)];
         var b = way.geometry[Math.min(way.geometry.length - 1, index + 1)];
-        if (a === b) return;
+        if (!a || !b || a === b) return;
         bearings.push(bearing({ lat: a.lat, lng: a.lon }, { lat: b.lat, lng: b.lon }));
       });
       if (bearings.length === 0) return;
@@ -444,6 +442,39 @@
    * Et skilt uden navn har intet at matche på, så den nærmeste by er det bedste gæt. Mappede bynoder
    * vinder over arealmidter, fordi en node ligger i bymidten.
    */
+  /*
+   * Byerne lagt i et gitter, så et opslag kun ser på de nærmeste. Cellerne er en halv grad, og der
+   * hentes en ring nok til at dække de 15 km en navngiven by må ligge væk - svaret er det samme som
+   * at gå hele listen igennem, for matchPlace måler afstanden selv.
+   */
+  var PLACE_CELL_DEG = 0.5;
+
+  function placeLookup(places) {
+    if (places.length < 2000) return function () { return places; };
+    var grid = new Map();
+    places.forEach(function (place) {
+      var id = Math.floor(place.position.lat / PLACE_CELL_DEG) + '/' +
+        Math.floor(place.position.lng / PLACE_CELL_DEG);
+      var list = grid.get(id);
+      if (!list) grid.set(id, list = []);
+      list.push(place);
+    });
+    return function (position) {
+      var rows = Math.ceil(MAX_NAMED_PLACE_DISTANCE_METERS / 111320 / PLACE_CELL_DEG);
+      var columns = Math.ceil(rows / Math.max(0.2, Math.cos(toRad(position.lat))));
+      var lat = Math.floor(position.lat / PLACE_CELL_DEG);
+      var lng = Math.floor(position.lng / PLACE_CELL_DEG);
+      var near = [];
+      for (var i = -rows; i <= rows; i++) {
+        for (var j = -columns; j <= columns; j++) {
+          var list = grid.get((lat + i) + '/' + (lng + j));
+          if (list) near = near.concat(list);
+        }
+      }
+      return near;
+    };
+  }
+
   function matchPlace(position, signName, places) {
     var normalized = (signName || '').trim().toLowerCase();
     if (normalized) {
@@ -535,6 +566,11 @@
       });
     });
 
+    /* Et opslag ser kun på de byer der ligger tæt nok på til at komme i betragtning. En celle fra
+       Overpass har en håndfuld byer og mærker det ikke; et helt land har hundredtusinder, og at
+       måle afstanden til dem alle for hvert skilt er en bygning der aldrig bliver færdig. */
+    var placesNear = placeLookup(places);
+
     var signs = [], dropped = [];
     elements.forEach(function (element) {
       var tags = element.tags || {};
@@ -547,7 +583,7 @@
         return;
       }
       var signName = (tags.name || tags['city_limit:name'] || '').trim() || null;
-      var place = matchPlace(position, signName, places);
+      var place = matchPlace(position, signName, placesNear(position));
       signs.push({
         id: element.id,
         position: position,

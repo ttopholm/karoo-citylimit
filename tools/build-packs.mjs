@@ -11,6 +11,7 @@
  *
  *   node tools/build-packs.mjs [--region dk] [--out build/packs] [--work build/dumps]
  *                              [--source dump|overpass] [--bounds S,W,N,E] [--endpoint URL]
+ *   node tools/build-packs.mjs --list       # regionernes id'er, som workflowet fordeler dem på
  *
  * By default the data comes from the country's OpenStreetMap dump, read with osmium: one download
  * and a minute of filtering, which is what the wiki asks a scheduled build of a whole country to do.
@@ -35,14 +36,21 @@ vm.runInThisContext(
 const C = globalThis.CityLimit;
 
 /**
- * Regions to build.
+ * Regions to build, and the mirrors each country's extract is fetched from, in order of preference.
  *
- * `dump` lists the mirrors the country extract is fetched from, in order of preference, and is all
- * that is needed. The rest -
- * `bounds`, `area`, `tile` - belongs to the older route through Overpass, kept behind
- * --source overpass for the day a dump is unavailable: `tile` splits the area into queries small
- * enough to answer, and places are collected with a margin so signs near a tile edge still find
- * the town they name.
+ * Which countries are here is a question about the data, not about the map. A town-entry sign only
+ * helps where somebody has mapped it, and that varies enormously: Germany has 130,000 of them and
+ * Sweden 503, though one is next door and the other is a bridge away. These are the five best
+ * covered countries a rider from here is likely to reach, counted in OpenStreetMap in August 2026:
+ *
+ *   Germany 129,870 · France 45,449 · Poland 16,089 · Netherlands 15,200 · Austria 15,155
+ *
+ * Next in line are Italy (12,281) and Czechia (8,305). Sweden (503) and Norway (87) are the obvious
+ * neighbours and the worst served; a pack for either would be a nearly empty file.
+ *
+ * `bounds`, `area` and `tile` belong to the older route through Overpass, kept behind
+ * --source overpass for the day a dump is unavailable. Only Denmark carries them: for a country the
+ * size of Germany that route is not a fallback, it is a week of queries.
  */
 const REGIONS = [
   {
@@ -57,6 +65,46 @@ const REGIONS = [
     bounds: { south: 54.50, west: 8.00, north: 57.80, east: 15.25 },
     area: '["ISO3166-1"="DK"][admin_level=2]',
     tile: { lat: 0.5, lng: 1.0 },
+  },
+  {
+    id: 'de',
+    name: 'Tyskland',
+    dump: [
+      'https://download.geofabrik.de/europe/germany-latest.osm.pbf',
+      'https://download.openstreetmap.fr/extracts/europe/germany.osm.pbf',
+    ],
+  },
+  {
+    id: 'nl',
+    name: 'Holland',
+    dump: [
+      'https://download.geofabrik.de/europe/netherlands-latest.osm.pbf',
+      'https://download.openstreetmap.fr/extracts/europe/netherlands.osm.pbf',
+    ],
+  },
+  {
+    id: 'at',
+    name: 'Østrig',
+    dump: [
+      'https://download.geofabrik.de/europe/austria-latest.osm.pbf',
+      'https://download.openstreetmap.fr/extracts/europe/austria.osm.pbf',
+    ],
+  },
+  {
+    id: 'pl',
+    name: 'Polen',
+    dump: [
+      'https://download.geofabrik.de/europe/poland-latest.osm.pbf',
+      'https://download.openstreetmap.fr/extracts/europe/poland.osm.pbf',
+    ],
+  },
+  {
+    id: 'fr',
+    name: 'Frankrig',
+    dump: [
+      'https://download.geofabrik.de/europe/france-latest.osm.pbf',
+      'https://download.openstreetmap.fr/extracts/europe/france.osm.pbf',
+    ],
   },
 ];
 
@@ -237,6 +285,9 @@ async function overpass(query) {
 }
 
 function tilesOf(region) {
+  if (!region.bounds || !region.tile) {
+    throw new Error(`${region.name} har ingen felter at dele op i; den bygges fra en dump (--source dump)`);
+  }
   const tiles = [];
   for (let south = region.bounds.south; south < region.bounds.north; south += region.tile.lat) {
     for (let west = region.bounds.west; west < region.bounds.east; west += region.tile.lng) {
@@ -462,6 +513,12 @@ async function build(region, generatedAt) {
     `${places.length} byer brugt, ${withRoad} med kendt vejretning, ${turned} rettet efter fartzonen)`,
   );
   return index;
+}
+
+// The workflow builds one country per runner, and asks here which ones there are.
+if (args.includes('--list')) {
+  process.stdout.write(`${JSON.stringify(REGIONS.map((region) => region.id))}\n`);
+  process.exit(0);
 }
 
 fs.mkdirSync(outDir, { recursive: true });

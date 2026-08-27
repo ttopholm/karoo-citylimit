@@ -45,14 +45,10 @@ export async function collectFromDump(region, workDir, log = console.log) {
   await download(region.dump, dump, log);
 
   const roadsPbf = file('roads.osm.pbf');
-  const roadsOpl = file('roads.opl');
   const placesPbf = file('places.osm.pbf');
   const placesJson = file('places.geojsonseq');
 
   await osmium(['tags-filter', '-o', roadsPbf, '--overwrite', dump, SIGN_KEYS, 'w/highway'], log);
-  // Without the metadata each line is "n<id> T<tags> x<lon> y<lat>" or "w<id> T<tags> Nn<id>,…",
-  // which is half the size and needs no parser worth the name.
-  await osmium(['cat', '-f', 'opl,add_metadata=false', '-o', roadsOpl, '--overwrite', roadsPbf], log);
   await osmium(['tags-filter', '-o', placesPbf, '--overwrite', dump, `nwr/place=${PLACE_VALUES}`], log);
   // export assembles the multipolygons, so a town mapped as an area comes back as one shape rather
   // than a pile of member ways.
@@ -66,7 +62,7 @@ export async function collectFromDump(region, workDir, log = console.log) {
   const signs = [];
   const signIds = new Set();
   const roads = new Map();
-  await eachLine(roadsOpl, (line) => {
+  await eachRoadLine(roadsPbf, log, (line) => {
     if (line.charCodeAt(0) === 110 /* n */) {
       const node = readNode(line);
       if (!node || !Object.keys(node.tags).some((key) => SIGN_KEY.test(key))) return;
@@ -95,7 +91,7 @@ export async function collectFromDump(region, workDir, log = console.log) {
   }
   const coordinates = new Map();
   const joins = new Map();
-  await eachLine(roadsOpl, (line) => {
+  await eachRoadLine(roadsPbf, log, (line) => {
     if (line.charCodeAt(0) === 110 /* n */) {
       const node = readNode(line, false);
       if (node && wanted.has(node.id)) coordinates.set(node.id, { lat: node.lat, lon: node.lon });
@@ -196,12 +192,33 @@ function osmium(args, log) {
   });
 }
 
-async function eachLine(file, onLine) {
-  const reader = readline.createInterface({
-    input: fs.createReadStream(file, { highWaterMark: 1 << 20 }),
-    crlfDelay: Infinity,
+/*
+ * Reads the filtered roads as text, one object per line, straight out of osmium.
+ *
+ * Without the metadata each line is "n<id> T<tags> x<lon> y<lat>" or "w<id> T<tags> Nn<id>,…", which
+ * needs no parser worth the name. It is read twice - once to find the sign roads, once to pick up
+ * what they are drawn from - and piped rather than written down: Germany's road extract is six
+ * gigabytes as text, and a second minute of osmium is cheaper than the disk to hold it.
+ */
+async function eachRoadLine(pbf, log, onLine) {
+  log('  osmium cat …');
+  const child = spawn('osmium', ['cat', '-f', 'opl,add_metadata=false', '-o', '-', pbf], {
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
+  let complaint = '';
+  child.stderr.on('data', (chunk) => { complaint += chunk; });
+  const finished = new Promise((resolve, reject) => {
+    child.on('error', (error) => reject(new Error(
+      error.code === 'ENOENT' ? 'osmium blev ikke fundet (apt-get install osmium-tool)' : error.message,
+    )));
+    child.on('close', (code) => (code === 0
+      ? resolve()
+      : reject(new Error(`osmium cat fejlede (${code}): ${complaint.trim().slice(0, 400)}`))));
+  });
+
+  const reader = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
   for await (const line of reader) if (line.length > 0) onLine(line);
+  await finished;
 }
 
 /*

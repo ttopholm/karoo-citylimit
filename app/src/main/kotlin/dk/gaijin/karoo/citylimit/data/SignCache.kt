@@ -47,12 +47,22 @@ class SignCache(private val file: File) {
      */
     private var loadedAt = 0L
 
+    /**
+     * The signs within a radius, found through the grid rather than by reading the whole cache.
+     *
+     * With one country downloaded that is the difference between looking at a dozen cells and at
+     * every sign in Germany, and this runs again every few hundred metres of a ride.
+     */
     suspend fun signsNear(position: LatLng, radiusMeters: Double): List<CityLimitSign> =
-        cells().values
-            .asSequence()
-            .flatMap { it.signs }
-            .filter { position.distanceTo(it.position) <= radiusMeters }
-            .toList()
+        mutex.withLock {
+            val loaded = loadLocked()
+            Cells.keysWithin(position, radiusMeters)
+                .asSequence()
+                .mapNotNull { loaded[it.id] }
+                .flatMap { it.signs }
+                .filter { position.distanceTo(it.position) <= radiusMeters }
+                .toList()
+        }
 
     suspend fun isFresh(key: Cells.Key, now: Long, maxAgeMillis: Long): Boolean {
         val cell = cells()[key.id] ?: return false

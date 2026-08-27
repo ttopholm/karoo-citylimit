@@ -133,11 +133,38 @@ Riding an area once caches it for 90 days, and a loaded route is prefetched cell
 still need a connection the first time. A region pack removes that: it puts a whole country on the
 device before you leave home.
 
+### Which countries
+
+A town-entry sign only helps where somebody has mapped it, and that varies enormously — Germany has
+130,000 of them and Sweden 503, though one is next door and the other is a bridge away. These are
+the counts in OpenStreetMap in August 2026, for the countries a rider from here might reach:
+
+| | | | |
+| --- | ---: | --- | ---: |
+| **Germany** | 129,870 | Czechia | 8,305 |
+| **France** | 45,449 | Belgium | 3,352 |
+| **Poland** | 16,089 | Switzerland | 2,576 |
+| **Netherlands** | 15,200 | Spain | 2,505 |
+| **Austria** | 15,155 | Finland | 2,042 |
+| Italy | 12,281 | Britain | 967 |
+| | | Sweden | 503 |
+| | | Norway | 87 |
+
+The five in bold are the ones built. Italy and Czechia are next in line. Sweden and Norway are the
+obvious neighbours and the worst served: a pack for either would be a nearly empty file, and the
+extension falls back to fetching cells as you ride there.
+
+### How they are built
+
 Packs are built by `tools/build-packs.mjs`, which runs the same classification and town matching as
 the extension and writes the result as grid cells split into files under 100 KB — small enough to
 also come through the Karoo system's HTTP API when the device has no Wi-Fi of its own.
 `.github/workflows/packs.yml` rebuilds them monthly and publishes them under the fixed `packs`
-release, so the download URL never changes. That release is marked as a pre-release on purpose:
+release, so the download URL never changes. Each country is built on its own runner: Germany is a
+five gigabyte download where Denmark is half a one, and one country's mirror having a bad day is no
+reason to leave the rest unbuilt. `tools/merge-catalog.mjs` then writes the catalogue the app reads,
+keeping the entry of any country that was not rebuilt this time — otherwise it would vanish from
+the list while its pack sat on the release. That release is marked as a pre-release on purpose:
 GitHub resolves `/releases/latest` to the newest release that is neither draft nor pre-release, and
 the app reads `manifest.json` from there to find updates — an ordinary packs release takes that spot
 and the update check starts returning 404.
