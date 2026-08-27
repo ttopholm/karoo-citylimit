@@ -21,7 +21,10 @@ data class CachedCell(
 
 @Serializable
 private data class CacheFile(
-    val version: Int = SignCache.FORMAT_VERSION,
+    // Written explicitly rather than defaulted, so the file can be encoded without its defaults: a
+    // sign has eight fields and rarely more than four of them, and a downloaded country is 115,000
+    // signs. Leaving the empty ones out is a third of the file.
+    val version: Int,
     val cells: Map<String, CachedCell> = emptyMap(),
 )
 
@@ -36,7 +39,7 @@ data class CacheStats(
  * been ridden before needs no connection at all.
  */
 class SignCache(private val file: File) {
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private val json = Json { ignoreUnknownKeys = true }
     private val mutex = Mutex()
     private var cells: MutableMap<String, CachedCell>? = null
 
@@ -139,7 +142,9 @@ class SignCache(private val file: File) {
             runCatching {
                 file.parentFile?.mkdirs()
                 val temp = File(file.parentFile, file.name + ".tmp")
-                temp.writeText(json.encodeToString(CacheFile.serializer(), CacheFile(cells = loaded)))
+                temp.writeText(
+                    json.encodeToString(CacheFile.serializer(), CacheFile(FORMAT_VERSION, loaded)),
+                )
                 if (!temp.renameTo(file)) {
                     file.writeText(temp.readText())
                     temp.delete()
@@ -163,9 +168,10 @@ class SignCache(private val file: File) {
         const val FILE_NAME = "sign-cache.json"
         val MAX_AGE_MILLIS = 180L * 24 * 60 * 60 * 1000
         /**
-         * Enough for a downloaded country and then some: Denmark is roughly 1,300 cells, and a
-         * cell holds a handful of signs.
+         * Enough for the largest country on offer with room beside it: Germany is 9,061 cells and
+         * 115,547 signs, Denmark 1,252 and 8,615. Two or three countries fit; all five would be
+         * some forty megabytes of cache, and the oldest cells would start falling off the end.
          */
-        const val MAX_CELLS = 8_000
+        const val MAX_CELLS = 20_000
     }
 }

@@ -191,8 +191,17 @@ old. A build that fails is easy to see; one that half-works is not, and a pack q
 is silent exactly where a town used to be announced. A drop of more than 5% stops the run.
 
 On the device, *Download a region* in the settings screen lists what is available and installs a pack
-straight into the sign cache. Denmark holds around 9,000 town-entry signs, which comes to roughly a
-megabyte spread over some 16 files — a rounding error next to the map downloads on the device.
+straight into the sign cache:
+
+| | signs | cells | files | size |
+| --- | ---: | ---: | ---: | ---: |
+| Denmark | 8,615 | 1,252 | 18 | 1.4 MB |
+| Germany | 115,547 | 9,061 | 242 | 18.1 MB |
+
+Both are a rounding error next to the map downloads on the device, though Germany is a few hundred
+requests rather than a few. The sign cache holds 20,000 cells, which is the largest country with
+room beside it — two or three countries fit, and installing all five would push the oldest cells off
+the end.
 
 Signs are clipped to the region's own borders, so the Danish pack does not quietly carry Skåne and
 Schleswig along with it. Places are deliberately not clipped: a sign near a border still has to find
