@@ -124,6 +124,9 @@ object Overpass {
      * prefixes the hamlet "Nykøbing Lyng", so the most significant place wins, and a tie means no
      * match rather than a guess.
      *
+     * Where those two find nothing, [almostMatch] allows for a name written a little differently,
+     * but only for a place close enough to be the one on the sign.
+     *
      * An unnamed sign has nothing to match on, so the nearest place is the best available guess.
      * Mapped nodes win over area centres, since a node sits at the town centre while an area centre
      * is only the middle of its bounding box.
@@ -135,7 +138,9 @@ object Overpass {
                 signPosition.distanceTo(it.position) <= MAX_NAMED_PLACE_DISTANCE_METERS
             }
             val spaced = normalized.replace(WHITESPACE, " ")
-            return exactMatch(signPosition, spaced, nearby) ?: qualifiedMatch(spaced, nearby)
+            return exactMatch(signPosition, spaced, nearby)
+                ?: qualifiedMatch(spaced, nearby)
+                ?: almostMatch(signPosition, spaced, nearby)
         }
         val (nodes, areas) = places.partition { !it.isArea }
         return nearestWithin(signPosition, nodes) ?: nearestWithin(signPosition, areas)
@@ -168,6 +173,119 @@ object Overpass {
         val topRank = candidates.maxOf { rankOf(it) }
         val best = candidates.filter { rankOf(it) == topRank }
         return best.singleOrNull()
+    }
+
+    /**
+     * A sign and a place naming the same town do not always spell it the same way.
+     *
+     * Some of it is grammar - the sign into Strandhuse reads "Strandhusene" - and some is one side
+     * or the other being wrong: "Feldbulle" for Feldballe, "Ganløsev" for Ganløse, "Åes" for Ås.
+     * Neither the exact nor the qualifier rule can see past a single letter, and 431 named signs in
+     * Denmark find no town at all, so they carry no direction and are left out.
+     *
+     * A place is accepted here when it is within [ALMOST_METERS] and its name is the sign's with the
+     * Danish definite ending added or dropped, or one letter away from it once the two are written
+     * the same way: without spacing or punctuation, with the common abbreviations spelt out, and
+     * with the letters that sound alike folded together. One letter and a kilometre is a deliberately
+     * small opening. Held against the signs that do find their town today, with that town taken away
+     * so the rule has to answer on its own, it invents a place for 6 of 8064 - and all six are the
+     * same town under another label, "Randers SV" for Randers, "Højslev" for "Højslev K.".
+     *
+     * Two candidates equally close in spelling mean no answer, and so does a difference that is only
+     * a direction word: Øster Sottrup and Vester Sottrup are one letter apart and two different
+     * villages. That word is the name, not a slip of the pen.
+     */
+    private fun almostMatch(signPosition: LatLng, name: String, places: List<PlaceNode>): PlaceNode? {
+        val plain = writtenAlike(name)
+        val signKey = soundAlike(plain)
+
+        val scored = places.mapNotNull { place ->
+            val placeName = place.name?.trim()?.lowercase() ?: return@mapNotNull null
+            val metres = signPosition.distanceTo(place.position)
+            if (metres > ALMOST_METERS) return@mapNotNull null
+            val placePlain = writtenAlike(placeName)
+            val placeKey = soundAlike(placePlain)
+            if (differOnlyByDirection(plain, placePlain)) return@mapNotNull null
+            val cost = when {
+                definiteFormOf(signKey, placeKey) -> 0
+                // A letter out of three is a different place, not a slip; grammar is not a guess,
+                // so only the spelling rule needs a name long enough to be sure of.
+                maxOf(signKey.length, placeKey.length) < MIN_ALMOST_LETTERS -> 2
+                else -> editDistance(signKey, placeKey)
+            }
+            if (cost > 1) null else Triple(place, cost, metres)
+        }.sortedWith(compareBy({ it.second }, { it.third }))
+
+        val best = scored.firstOrNull() ?: return null
+        if (scored.size > 1 && scored[1].second == best.second) return null
+        return best.first
+    }
+
+    /** How close a place has to be before a name written a little differently is worth believing. */
+    private const val ALMOST_METERS = 1_000.0
+
+    /** Shorter than this, one letter is too much of the name to let go of. */
+    private const val MIN_ALMOST_LETTERS = 4
+
+    /** Punctuation and spacing dropped, and the abbreviations Danish signs use written out. */
+    private fun writtenAlike(name: String): String {
+        var text = name
+        for ((short, long) in ABBREVIATIONS) text = text.replace(short, long)
+        return text.replace(NOT_A_LETTER, "")
+    }
+
+    private val ABBREVIATIONS = listOf(
+        Regex("\\bkr\\b\\.?") to "kirke",
+        Regex("\\bgl\\b\\.?") to "gammel",
+        Regex("\\bnr\\b\\.?") to "nørre",
+        Regex("\\bsdr\\b\\.?") to "sønder",
+        Regex("\\bskt\\b\\.?") to "sankt",
+        Regex("\\bst\\b\\.?") to "store",
+        Regex("\\bll\\b\\.?") to "lille",
+    )
+
+    private val NOT_A_LETTER = Regex("[\\s.\\-']+")
+
+    /** Letters that sound alike written the same way, so "Åes" is one letter from "Ås", not three. */
+    private fun soundAlike(text: String): String = text
+        .replace("å", "aa")
+        .replace("æ", "ae")
+        .replace("ø", "oe")
+        .replace(ACCENTED_E, "e")
+        .replace("ck", "k")
+
+    private val ACCENTED_E = Regex("[éèê]")
+
+    /** "Strandhusene" is "Strandhuse" spoken of as a place one is entering, not another town. */
+    private fun definiteFormOf(one: String, other: String): Boolean =
+        DEFINITE_ENDINGS.any { one == other + it || other == one + it }
+
+    private val DEFINITE_ENDINGS = listOf("erne", "rne", "ne", "en", "et", "e")
+
+    /**
+     * Whether two names are the same but for a word that tells two settlements apart. Øster and
+     * Vester Sottrup differ by one letter and are two villages a kilometre apart.
+     */
+    private fun differOnlyByDirection(one: String, other: String): Boolean =
+        one != other && one.replace(DIRECTIONS, "") == other.replace(DIRECTIONS, "")
+
+    private val DIRECTIONS =
+        Regex("(øster|vester|nørre|sønder|nord|syd|øst|vest|over|neder|store|lille|gammel|ny|indre|ydre)")
+
+    /** Levenshtein distance: how many letters have to change for one name to become the other. */
+    private fun editDistance(one: String, other: String): Int {
+        if (one == other) return 0
+        var previous = IntArray(other.length + 1) { it }
+        for (i in 1..one.length) {
+            val current = IntArray(other.length + 1)
+            current[0] = i
+            for (j in 1..other.length) {
+                val substitute = previous[j - 1] + if (one[i - 1] == other[j - 1]) 0 else 1
+                current[j] = minOf(previous[j] + 1, current[j - 1] + 1, substitute)
+            }
+            previous = current
+        }
+        return previous[other.length]
     }
 
     private fun rankOf(place: PlaceNode): Int = PLACE_RANK[place.kind.lowercase()] ?: 0

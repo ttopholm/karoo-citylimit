@@ -34,7 +34,20 @@ Town boundaries come from OpenStreetMap. Two things have to be true before you g
    spacing, so the sign "Vesterlyng" finds the hamlet "Vester Lyng", and a sign may drop the
    regional qualifier a place carries: "Nykøbing" matches "Nykøbing Sjælland". That last rule only
    applies when it is unambiguous — "Nykøbing" also prefixes the hamlet "Nykøbing Lyng", so the more
-   significant place wins, and a tie between equals means no match rather than a guess. Falling back to the nearest place
+   significant place wins, and a tie between equals means no match rather than a guess.
+
+   Where neither answers, a place within a kilometre is accepted if its name is the sign's with the
+   Danish definite ending added or dropped — the sign into Strandhuse reads "Strandhusene" — or one
+   letter away from it once both are written the same way: spacing and punctuation gone, `Kr.` and
+   `Sdr.` spelt out, and letters that sound alike written alike, so "Åes" is one letter from "Ås"
+   rather than three. Signs and maps disagree more often than one would think: "Feldbulle" for
+   Feldballe, "Ganløsev" for Ganløse, "Kundby" for Kyndby. That rule finds a town for 149 signs that
+   had none, and is deliberately narrow — a name under four letters is left alone, two places
+   equally close in spelling mean no answer, and a difference that is only a direction word is no
+   difference at all, since Øster and Vester Sottrup are one letter apart and two villages. Held
+   against the signs that do find their town, with that town taken away so the rule has to answer on
+   its own, it adds no wrong answers at all, and it never overrules a match the first two rules made.
+   Falling back to the nearest place
    for a named sign points the arrow at whatever village happens to be closest: signs reading
    "Lyngen" in Odsherred, where no place of that name exists, ended up pointing at neighbouring
    hamlets, and at a different one depending on which area had been downloaded. Only a sign with no
