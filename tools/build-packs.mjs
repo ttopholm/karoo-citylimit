@@ -472,10 +472,16 @@ function chunk(region, cells) {
   }));
 }
 
+/** The same test parseResponse makes: a node that is a town sign, entry or exit. */
+function isTownSign(tags) {
+  const sides = C.classify(tags);
+  return sides.entry || sides.exit;
+}
+
 async function build(region, generatedAt) {
   console.log(`\n${region.name} (${region.id}):`);
   const { elements, roads, joins } = source === 'dump'
-    ? await collectFromDump(region, workDir)
+    ? await collectFromDump(region, workDir, isTownSign)
     : await collect(region);
   const { signs, dropped, places } = C.parseResponse({ elements });
   C.attachRoadBearings(signs, roads);

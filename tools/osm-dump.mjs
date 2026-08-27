@@ -36,8 +36,10 @@ const SIGN_KEY = /^traffic_sign(:(forward|backward|both))?$/;
  *
  * @param region a REGIONS entry, needing a `dump` URL
  * @param workDir where the dump and the files osmium writes are kept
+ * @param isSign whether a node's tags make it a town sign at all - osmium can filter on the key but
+ *   not on the value, and in Germany every stop sign and speed limit carries that key too
  */
-export async function collectFromDump(region, workDir, log = console.log) {
+export async function collectFromDump(region, workDir, isSign, log = console.log) {
   fs.mkdirSync(workDir, { recursive: true });
   const file = (name) => path.join(workDir, `${region.id}-${name}`);
 
@@ -66,6 +68,10 @@ export async function collectFromDump(region, workDir, log = console.log) {
     if (line.charCodeAt(0) === 110 /* n */) {
       const node = readNode(line);
       if (!node || !Object.keys(node.tags).some((key) => SIGN_KEY.test(key))) return;
+      // Germany tags 381,059 nodes with traffic_sign and only 130,000 of them mark a town. Taking
+      // the rest along means every road they stand on and every road meeting those, which is where
+      // the build ran out of memory.
+      if (!isSign(node.tags)) return;
       // A handful of nodes come out of the extract twice; a sign announced twice is a sign
       // announced twice.
       if (signIds.has(node.id)) return;
