@@ -179,6 +179,40 @@ check('exact name beats a qualifier match', C.matchPlace({lat:55.8700,lng:11.550
   { id: 2, position: {lat:55.8648,lng:11.5562}, name: 'Hønsinge', kind: 'hamlet', isArea: false },
 ]).id === 2);
 
+// A sign and a place do not always spell a name the same way. Real cases from the Danish data,
+// mirrored by PlaceSpellingTest in core/.
+const at = (name, lat, lng, kind = 'hamlet', id = 1) =>
+  ({ id, position: { lat, lng }, name, kind, isArea: false });
+
+check('the definite form is the same town', (() => {
+  const sign = { lat: 55.8764611, lng: 11.6705286 };   // node 11112564951, 373 m from Strandhuse
+  return C.matchPlace(sign, 'Strandhusene', [at('Strandhuse', 55.8790, 11.6690)])?.id === 1
+    && C.matchPlace(sign, 'Øer', [at('Øerne', 55.8790, 11.6690)])?.id === 1;
+})());
+check('an abbreviation on the sign is written out',
+  C.matchPlace({ lat: 55.5900, lng: 11.8600 }, 'Kr. Hvalsø',
+    [at('Kirke Hvalsø', 55.5905, 11.8610, 'village')])?.id === 1);
+check('one letter wrong is still the same town', (() => {
+  const sign = { lat: 56.2000, lng: 10.5000 };
+  return [['Feldbulle', 'Feldballe'], ['Ganløsev', 'Ganløse'], ['Slaglunde', 'Slagslunde']]
+    .every(([name, town]) => C.matchPlace(sign, name, [at(town, 56.2010, 10.5010, 'village')])?.id === 1);
+})());
+check('letters that sound alike count as one',
+  C.matchPlace({ lat: 56, lng: 10 }, 'Åes', [at('Ås', 56.0010, 10.0010)])?.id === 1);
+check('a direction word is the name, not a slip',
+  C.matchPlace({ lat: 54.96, lng: 9.68 }, 'Øster Sottrup',
+    [at('Vester Sottrup', 54.9605, 9.6810, 'village')]) === null);
+check('two towns spelled equally close are no answer',
+  C.matchPlace({ lat: 56, lng: 10 }, 'Hover',
+    [at('Hoven', 56.0010, 10.0010), at('Hoves', 56.0012, 10.0012, 'hamlet', 2)]) === null);
+check('a town too far away is not the one on the sign',
+  C.matchPlace({ lat: 56, lng: 10 }, 'Feldbulle', [at('Feldballe', 56.0500, 10, 'village')]) === null);
+check('a short name is left alone',
+  C.matchPlace({ lat: 56, lng: 10 }, 'Hem', [at('Hee', 56.0010, 10.0010)]) === null);
+check('an exact match is never overruled',
+  C.matchPlace({ lat: 56, lng: 10 }, 'Hørning',
+    [at('Hørning', 56.0060, 10, 'village'), at('Hørninge', 56.0005, 10, 'hamlet', 2)])?.id === 1);
+
 check('query collects place nodes, ways and relations', (q => q.includes('node(') && q.includes('way(') && q.includes('relation(') && q.includes('out center qt;'))(C.buildQuery({south:55.85,west:12.25,north:55.90,east:12.35})));
 
 // Areas as a fallback for towns without a place node, mirroring OverpassTest.

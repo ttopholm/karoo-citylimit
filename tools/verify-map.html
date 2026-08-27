@@ -451,7 +451,8 @@
         return distance(position, place.position) <= MAX_NAMED_PLACE_DISTANCE_METERS;
       });
       var spaced = normalized.replace(/\s+/g, ' ');
-      return exactMatch(position, spaced, nearby) || qualifiedMatch(spaced, nearby);
+      return exactMatch(position, spaced, nearby) || qualifiedMatch(spaced, nearby)
+        || almostMatch(position, spaced, nearby);
     }
     var nodes = places.filter(function (place) { return !place.isArea; });
     var areas = places.filter(function (place) { return place.isArea; });
@@ -560,6 +561,106 @@
       });
     });
     return { signs: signs, dropped: dropped, places: places };
+  }
+
+  /*
+   * Et skilt og en by staver ikke altid navnet ens.
+   *
+   * Noget er grammatik — skiltet ind til Strandhuse siger "Strandhusene" — og noget er en fejl på
+   * den ene eller den anden side: "Feldbulle" for Feldballe, "Ganløsev" for Ganløse, "Åes" for Ås.
+   * Hverken den eksakte regel eller kvalifikator-reglen kan se forbi ét bogstav, og 431 navngivne
+   * skilte i Danmark finder slet ingen by, står uden retning og bliver derfor udeladt.
+   *
+   * En by godtages her, når den ligger inden for ALMOST_METERS og hedder det samme som skiltet med
+   * den bestemte endelse lagt til eller taget fra, eller er ét bogstav derfra når de to skrives ens:
+   * uden mellemrum og tegn, med forkortelserne skrevet ud, og med de bogstaver der lyder ens slået
+   * sammen. Ét bogstav og en kilometer er med vilje en lille åbning. Holdt op mod de skilte der
+   * finder deres by i dag — med byen taget væk, så reglen skal svare på egen hånd — finder den på en
+   * by for 6 ud af 8064, og alle seks er den samme by under en anden etiket.
+   *
+   * To byer der ligger lige tæt på i stavning giver intet svar, og det gør en forskel der kun er et
+   * retningsord også: Øster Sottrup og Vester Sottrup er ét bogstav fra hinanden og to landsbyer.
+   */
+  var ALMOST_METERS = 1000;
+
+  /* Kortere end det er ét bogstav for stor en del af navnet at give slip på. */
+  var MIN_ALMOST_LETTERS = 4;
+
+  function almostMatch(position, name, places) {
+    var plain = writtenAlike(name);
+    var signKey = soundAlike(plain);
+
+    var scored = [];
+    places.forEach(function (place) {
+      if (!place.name) return;
+      var metres = distance(position, place.position);
+      if (metres > ALMOST_METERS) return;
+      var placePlain = writtenAlike(String(place.name).trim().toLowerCase());
+      var placeKey = soundAlike(placePlain);
+      if (differOnlyByDirection(plain, placePlain)) return;
+      var cost;
+      if (definiteFormOf(signKey, placeKey)) cost = 0;
+      // Ét bogstav ud af tre er et andet sted, ikke en fejl; grammatik er ikke et gæt, så det er
+      // kun stavereglen der har brug for et navn der er langt nok til at være sikker på.
+      else if (Math.max(signKey.length, placeKey.length) < MIN_ALMOST_LETTERS) return;
+      else cost = editDistance(signKey, placeKey);
+      if (cost <= 1) scored.push({ place: place, cost: cost, metres: metres });
+    });
+    if (scored.length === 0) return null;
+    scored.sort(function (a, b) { return a.cost - b.cost || a.metres - b.metres; });
+    if (scored.length > 1 && scored[1].cost === scored[0].cost) return null;
+    return scored[0].place;
+  }
+
+  var ABBREVIATIONS = [
+    [/\bkr\b\.?/g, 'kirke'], [/\bgl\b\.?/g, 'gammel'], [/\bnr\b\.?/g, 'nørre'],
+    [/\bsdr\b\.?/g, 'sønder'], [/\bskt\b\.?/g, 'sankt'], [/\bst\b\.?/g, 'store'],
+    [/\bll\b\.?/g, 'lille']
+  ];
+
+  /* Tegn og mellemrum væk, og de forkortelser danske skilte bruger skrevet ud. */
+  function writtenAlike(name) {
+    var text = name;
+    ABBREVIATIONS.forEach(function (pair) { text = text.replace(pair[0], pair[1]); });
+    return text.replace(/[\s.\-']+/g, '');
+  }
+
+  /* Bogstaver der lyder ens skrives ens, så "Åes" er ét bogstav fra "Ås" og ikke tre. */
+  function soundAlike(text) {
+    return text.replace(/å/g, 'aa').replace(/æ/g, 'ae').replace(/ø/g, 'oe')
+      .replace(/[éèê]/g, 'e').replace(/ck/g, 'k');
+  }
+
+  var DEFINITE_ENDINGS = ['erne', 'rne', 'ne', 'en', 'et', 'e'];
+
+  /* "Strandhusene" er "Strandhuse" omtalt som et sted man kører ind i, ikke en anden by. */
+  function definiteFormOf(one, other) {
+    return DEFINITE_ENDINGS.some(function (ending) {
+      return one === other + ending || other === one + ending;
+    });
+  }
+
+  var DIRECTIONS = /(øster|vester|nørre|sønder|nord|syd|øst|vest|over|neder|store|lille|gammel|ny|indre|ydre)/g;
+
+  /* Er de to navne ens på nær et ord der skiller to bebyggelser ad, er det ikke en stavefejl. */
+  function differOnlyByDirection(one, other) {
+    return one !== other && one.replace(DIRECTIONS, '') === other.replace(DIRECTIONS, '');
+  }
+
+  /* Levenshtein: hvor mange bogstaver der skal ændres for at det ene navn bliver det andet. */
+  function editDistance(one, other) {
+    if (one === other) return 0;
+    var previous = [];
+    for (var j = 0; j <= other.length; j++) previous[j] = j;
+    for (var i = 1; i <= one.length; i++) {
+      var current = [i];
+      for (var k = 1; k <= other.length; k++) {
+        var substitute = previous[k - 1] + (one[i - 1] === other[k - 1] ? 0 : 1);
+        current[k] = Math.min(previous[k] + 1, current[k - 1] + 1, substitute);
+      }
+      previous = current;
+    }
+    return previous[other.length];
   }
 
   function dedupeKey(sign) {
