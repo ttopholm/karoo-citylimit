@@ -254,6 +254,16 @@
   var URBAN_ZONE = /urban|:(20|30|40|50)$/;
   var RURAL_ZONE = /rural|:(60|70|80|90|100|110|120|130)$/;
 
+  /*
+   * Vejens fartzone, enten allerede afgjort eller læst af dens tags.
+   *
+   * Pakkebyggeren regner den ud mens den læser, og smider tags væk igen: Tyskland har 200.000
+   * skilteveje og en halv million naboveje, og deres tags alene fyldte mere hukommelse end der var.
+   */
+  function zoneOf(way) {
+    return way.zone !== undefined ? way.zone : speedZone(way.tags);
+  }
+
   function speedZone(tags) {
     var source = String((tags && (tags['source:maxspeed'] || tags['zone:maxspeed'])) || '').toLowerCase();
     if (URBAN_ZONE.test(source)) return 'urban';
@@ -329,7 +339,7 @@
       var neighbour = way.geometry && way.geometry[index === 0 ? 1 : index - 1];
       if (!neighbour) return;
       sides.push({
-        zone: speedZone(way.tags),
+        zone: zoneOf(way),
         away: bearing(sign.position, { lat: neighbour.lat, lng: neighbour.lon })
       });
     });
@@ -340,7 +350,7 @@
 
   /* Skiltet står midt i en byzonevej: den ende der løber ud på landevejen er vejen ud af byen. */
   function zoneAcrossRoad(sign, way, joinsAt) {
-    if (speedZone(way.tags) !== 'urban') return null;
+    if (zoneOf(way) !== 'urban') return null;
     var index = way.nodes.indexOf(sign.id);
     var last = way.nodes.length - 1;
     var ends = [];
@@ -352,7 +362,7 @@
       var zones = new Set();
       (joinsAt.get(way.nodes[endIndex]) || []).forEach(function (other) {
         if (other.id === way.id) return;
-        var zone = speedZone(other.tags);
+        var zone = zoneOf(other);
         if (zone) zones.add(zone);
       });
       if (zones.size !== 1) return;
@@ -805,6 +815,7 @@
     attachRoadBearings: attachRoadBearings,
     alignEntryHeadings: alignEntryHeadings,
     speedZone: speedZone,
+    zoneOf: zoneOf,
     orientBySpeedZone: orientBySpeedZone,
     classify: classify,
     matchPlace: matchPlace,

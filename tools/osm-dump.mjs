@@ -36,10 +36,12 @@ const SIGN_KEY = /^traffic_sign(:(forward|backward|both))?$/;
  *
  * @param region a REGIONS entry, needing a `dump` URL
  * @param workDir where the dump and the files osmium writes are kept
- * @param isSign whether a node's tags make it a town sign at all - osmium can filter on the key but
- *   not on the value, and in Germany every stop sign and speed limit carries that key too
+ * @param logic the shared logic block: `isSign` tells a town sign from any other traffic sign -
+ *   osmium can filter on the key but not on the value, and in Germany every stop sign carries that
+ *   key too - and `speedZone` settles a road's zone while it is read, so its tags can be let go
  */
-export async function collectFromDump(region, workDir, isSign, log = console.log) {
+export async function collectFromDump(region, workDir, logic, log = console.log) {
+  const { isSign, speedZone } = logic;
   fs.mkdirSync(workDir, { recursive: true });
   const file = (name) => path.join(workDir, `${region.id}-${name}`);
 
@@ -82,7 +84,10 @@ export async function collectFromDump(region, workDir, isSign, log = console.log
     if (line.charCodeAt(0) !== 119 /* w */) return;
     const way = readWay(line);
     if (!way?.tags.highway) return;
-    if (way.nodes.some((node) => signIds.has(node))) roads.set(way.id, way);
+    if (!way.nodes.some((node) => signIds.has(node))) return;
+    // Only the zone is wanted from the tags, and 200,000 sets of German road tags is more memory
+    // than there is. Settle it here and let the rest go.
+    roads.set(way.id, { id: way.id, nodes: way.nodes, zone: speedZone(way.tags) });
   });
   log(`  ${signs.length} skiltenoder på ${roads.size} veje`);
 
@@ -107,8 +112,9 @@ export async function collectFromDump(region, workDir, isSign, log = console.log
     const way = readWay(line);
     if (!way?.tags.highway) return;
     const touching = way.nodes.filter((node) => ends.has(node));
-    // Only the nodes at the road ends are carried on; the full node lists would run to gigabytes.
-    if (touching.length > 0) joins.set(way.id, { id: way.id, nodes: touching, tags: way.tags });
+    // Only the nodes at the road ends are carried on, and only the zone of the tags; the full lists
+    // of either would run to gigabytes.
+    if (touching.length > 0) joins.set(way.id, { id: way.id, nodes: touching, zone: speedZone(way.tags) });
   });
 
   for (const road of roads.values()) {
@@ -302,7 +308,15 @@ function readPlaces(file) {
     const type = marker[0] === 'n' ? 'node' : (area && number % 2 === 1) ? 'relation' : 'way';
     const id = area ? Math.floor(number / 2) : number;
     if (area && type === 'way') assembled.add(id);
-    features.push({ id, type, area, middle: centre(feature.geometry), tags: feature.properties ?? {} });
+    const tags = feature.properties ?? {};
+    features.push({
+      id,
+      type,
+      area,
+      middle: centre(feature.geometry),
+      // A German place carries a dozen tags and there are 97,047 of them; two are read.
+      tags: { place: tags.place, ...(tags.name ? { name: tags.name } : {}) },
+    });
   }
 
   const places = [];

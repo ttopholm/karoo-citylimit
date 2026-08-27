@@ -481,7 +481,7 @@ function isTownSign(tags) {
 async function build(region, generatedAt) {
   console.log(`\n${region.name} (${region.id}):`);
   const { elements, roads, joins } = source === 'dump'
-    ? await collectFromDump(region, workDir, isTownSign)
+    ? await collectFromDump(region, workDir, { isSign: isTownSign, speedZone: C.speedZone })
     : await collect(region);
   const { signs, dropped, places } = C.parseResponse({ elements });
   C.attachRoadBearings(signs, roads);
