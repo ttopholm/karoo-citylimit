@@ -73,9 +73,22 @@ export async function fetchNorwegianSigns(log = console.log) {
   return signs;
 }
 
+/*
+ * The name on the sign, out of the lines it is written on.
+ *
+ * NVDB separates the lines of a sign's text with @, and a place-name sign often has more than one:
+ * a road number under the name, or the same place in Norwegian, Sami and Kven -
+ * "Furuflaten@@Vuosvággi@@Vuosvankka". Read whole, none of those match a mapped place, and 675 real
+ * towns were being dropped over a separator. The first line that is not just a number is the name.
+ */
+function nameOn(text) {
+  const lines = String(text ?? '').split('@').map((line) => line.trim()).filter(Boolean);
+  return lines.find((line) => !/^[\d.]+$/.test(line)) ?? lines[0] ?? '';
+}
+
 function toSign(object) {
   const text = object.egenskaper?.find((one) => one.id === TEXT)?.verdi;
-  const name = String(text ?? '').trim();
+  const name = nameOn(text);
   if (!name) return null;
   const point = /POINT Z? ?\(([-0-9.]+) ([-0-9.]+)/.exec(object.lokasjon?.geometri?.wkt ?? '');
   if (!point) return null;
