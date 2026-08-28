@@ -176,13 +176,16 @@ What is built today:
 
 | | signs | source | licence |
 | --- | ---: | --- | --- |
-| Denmark | 8,635 | OpenStreetMap | ODbL |
-| Germany | 115,547 | OpenStreetMap | ODbL |
+| Germany | 114,828 | OpenStreetMap | ODbL |
 | Sweden | 42,938 | Trafikverket NVDB, via Lastkajen | CC0 |
+| France | 41,472 | OpenStreetMap | ODbL |
+| Poland | 15,013 | OpenStreetMap | ODbL |
+| Netherlands | 14,917 | OpenStreetMap | ODbL |
+| Austria | 14,300 | OpenStreetMap | ODbL |
+| Denmark | 8,635 | OpenStreetMap | ODbL |
 | Norway | 6,852 | Statens vegvesen NVDB, open API | NLOD |
-| France, Poland, Netherlands, Austria | — | OpenStreetMap | ODbL |
 
-The last row is configured and not yet built. Italy and Czechia are the next map-backed candidates.
+Italy and Czechia are the next map-backed candidates.
 
 Sweden and Norway are the neighbours worst served by the map, and for both the answer came from the
 national road authority instead.
@@ -291,15 +294,19 @@ straight into the sign cache:
 
 | | signs | cells | files | size |
 | --- | ---: | ---: | ---: | ---: |
-| Denmark | 8,635 | 1,257 | 18 | 1.4 MB |
-| Norway | 6,852 | 2,882 | 15 | 1.1 MB |
+| Germany | 114,828 | 8,985 | 240 | 17.9 MB |
 | Sweden | 42,938 | 2,836 | 90 | 6.6 MB |
-| Germany | 115,547 | 9,061 | 242 | 18.1 MB |
+| France | 41,472 | 7,066 | 86 | 6.5 MB |
+| Poland | 15,013 | 3,150 | 30 | 2.2 MB |
+| Netherlands | 14,917 | 1,047 | 30 | 2.2 MB |
+| Austria | 14,300 | 1,430 | 31 | 2.3 MB |
+| Denmark | 8,635 | 1,257 | 18 | 1.3 MB |
+| Norway | 6,852 | 2,882 | 15 | 1.1 MB |
 
 These are a rounding error next to the map downloads on the device, though Germany is a few hundred
-requests rather than a few. The sign cache holds 20,000 cells, which is the largest country with
-room beside it — two or three countries fit, and installing every one would push the oldest cells off
-the end. Sweden is large for its population because a pack built from boundaries finds every road
+requests rather than a few. **The eight together are 28,653 cells and the sign cache holds 20,000**,
+so they do not all fit: Germany with Denmark and Sweden does, or France with a couple of neighbours,
+and installing everything would push the oldest cells off the end without saying so. Sweden is large for its population because a pack built from boundaries finds every road
 that crosses one, where a pack built from the map finds only the signs somebody stood in front of.
 
 Signs are clipped to the region's own borders, so the Danish pack does not quietly carry Skåne and

@@ -160,4 +160,35 @@ jobs:
           fi
           # Enforce it on every run, including for a release created before this was in place.
           gh release edit packs --prerelease --latest=false
-          gh release upload packs build/packs/*.json --clobber
+
+          # Uploading every file in one command asks GitHub for five hundred assets as fast as it
+          # will take them, and the first run that covered all eight countries was cut off partway:
+          #
+          #   HTTP 403: You have exceeded a secondary rate limit ... name=se-019.json
+          #
+          # --clobber deletes an asset before it uploads the replacement, so the four it was in the
+          # middle of were simply gone, and Sweden was left half one build and half another with a
+          # hole in it. Small batches, a pause between them, and a retry that waits.
+          upload() {
+            for attempt in 1 2 3 4 5; do
+              if gh release upload packs "$@" --clobber; then return 0; fi
+              echo "  ${attempt}/5 mislykkedes, venter $((attempt * 30))s"
+              sleep $((attempt * 30))
+            done
+            echo "::error::kunne ikke lægge $# filer op efter fem forsøg"
+            return 1
+          }
+
+          # The chunks go first, then each region's index, and the catalogue last. The app reads the
+          # catalogue to find the indexes and the indexes to find the chunks, so a run that dies
+          # partway leaves it pointing at what was already whole rather than at files not there yet.
+          mapfile -t chunks < <(ls build/packs/*-[0-9][0-9][0-9].json)
+          mapfile -t indexes < <(ls build/packs/*.json | grep -Ev -e '-[0-9]{3}\.json$' -e 'regions\.json$')
+
+          echo "${#chunks[@]} pakkefiler og ${#indexes[@]} regionsindeks"
+          for ((i = 0; i < ${#chunks[@]}; i += 25)); do
+            upload "${chunks[@]:i:25}"
+            sleep 10
+          done
+          upload "${indexes[@]}"
+          upload build/packs/regions.json
