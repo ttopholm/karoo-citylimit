@@ -148,11 +148,30 @@ the counts in OpenStreetMap in August 2026, for the countries a rider from here 
 | **Austria** | 15,155 | Finland | 2,042 |
 | Italy | 12,281 | Britain | 967 |
 | | | Sweden | 503 |
-| | | Norway | 87 |
+| | | **Norway** | 87 |
 
-The five in bold are the ones built. Italy and Czechia are next in line. Sweden and Norway are the
-obvious neighbours and the worst served: a pack for either would be a nearly empty file, and the
-extension falls back to fetching cells as you ride there.
+Denmark and the five in bold are the ones built. Italy and Czechia are next in line.
+
+Sweden and Norway are the obvious neighbours and the worst served, and for Norway the reason is not
+that nobody mapped them. **The sign does not exist.** "Tettbygd strøk" was withdrawn from the
+Norwegian sign catalogue, and Statens vegvesen's national road database holds exactly one of them in
+the whole country — so there is nothing there to find. What Norway has instead is the plain white
+place-name sign, and 11,547 of them are in that database with a position and the name written on
+them. It carries no speed limit, so it is not a town-entry sign in the legal sense, but it is what a
+rider actually sees on arriving somewhere.
+
+So the Norway pack is built from those, through
+[NVDB's open API](https://nvdbapiles.atlas.vegvesen.no/) — no key needed. The signs are not nodes of
+the map, so each is tied to the road node nearest it while keeping its own position, and from there
+everything is as it is everywhere else: the road it stands beside gives the bearing, the speed zone
+either side gives the direction into town, and a sign whose name matches no mapped place is dropped.
+That last rule is also what keeps the fjords out — a place-name sign marks valleys and rivers too,
+and *Glomma* is not a town.
+
+The data is used under the [Norwegian Licence for Public
+Data](https://www.nvdb.no/rammer-regelverk/vilkar-og-ansvar/vilkar-for-bruk-av-data/), which asks to
+be named: *Inneholder data under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens
+vegvesen.* The pack carries that line and the settings screen shows it.
 
 ### How they are built
 

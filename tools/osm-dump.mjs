@@ -61,6 +61,14 @@ export async function collectFromDump(region, workDir, logic, log = console.log)
   const places = readPlaces(placesJson);
   log(`  ${places.length} byer`);
 
+  // A country whose signs are not in OpenStreetMap brings its own. They are placed on the road
+  // network here rather than being nodes of it, so each is tied to the nearest road node - which
+  // is what the road bearing and the speed zone are read from - while keeping its own position.
+  const brought = region.signs ? await region.signs(log) : [];
+  const broughtNear = signLookup(brought);
+  const nearest = new Map();
+  let placed = false;
+
   // The dump is sorted: every node comes before every way, so one pass finds the sign nodes and,
   // still in the same pass, the roads they stand on.
   const signs = [];
@@ -68,7 +76,16 @@ export async function collectFromDump(region, workDir, logic, log = console.log)
   const roads = new Map();
   await eachRoadLine(roadsPbf, log, (line) => {
     if (line.charCodeAt(0) === 110 /* n */) {
-      const node = readNode(line);
+      const node = readNode(line, brought.length === 0);
+      if (brought.length > 0) {
+        for (const sign of broughtNear(node)) {
+          const metres = haversine(sign, node);
+          if (metres > MAX_SNAP_METERS) continue;
+          const best = nearest.get(sign.id);
+          if (!best || metres < best.metres) nearest.set(sign.id, { node: node.id, metres });
+        }
+        return;
+      }
       if (!node || !Object.keys(node.tags).some((key) => SIGN_KEY.test(key))) return;
       // Germany tags 381,059 nodes with traffic_sign and only 130,000 of them mark a town. Taking
       // the rest along means every road they stand on and every road meeting those, which is where
@@ -82,6 +99,24 @@ export async function collectFromDump(region, workDir, logic, log = console.log)
       return;
     }
     if (line.charCodeAt(0) !== 119 /* w */) return;
+    // Every node is read before the first way, so this is where the brought signs know their road.
+    if (brought.length > 0 && !placed) {
+      placed = true;
+      for (const sign of brought) {
+        const match = nearest.get(sign.id);
+        if (!match) continue;
+        signs.push({
+          type: 'node',
+          id: sign.id,
+          lat: sign.lat,
+          lon: sign.lon,
+          roadNode: match.node,
+          tags: { name: sign.name, traffic_sign: 'city_limit' },
+        });
+        signIds.add(match.node);
+      }
+      log(`  ${signs.length} af ${brought.length} medbragte skilte fandt en vej`);
+    }
     const way = readWay(line);
     if (!way?.tags.highway) return;
     if (!way.nodes.some((node) => signIds.has(node))) return;
@@ -127,6 +162,44 @@ export async function collectFromDump(region, workDir, logic, log = console.log)
   log(`  ${joins.size} naboveje`);
 
   return { elements: [...signs, ...places], roads: drawn, joins: [...joins.values()] };
+}
+
+/** How far a brought sign may be from a road node before it is taken to belong to no road. */
+const MAX_SNAP_METERS = 60;
+
+/* Signs in a grid, so a node asks about the few near it rather than all eleven thousand. */
+function signLookup(signs) {
+  if (signs.length === 0) return () => [];
+  const cell = 0.01;
+  const grid = new Map();
+  for (const sign of signs) {
+    const id = `${Math.floor(sign.lat / cell)}/${Math.floor(sign.lon / cell)}`;
+    let list = grid.get(id);
+    if (!list) grid.set(id, list = []);
+    list.push(sign);
+  }
+  return (point) => {
+    if (!point) return [];
+    const lat = Math.floor(point.lat / cell);
+    const lon = Math.floor(point.lon / cell);
+    const near = [];
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        const list = grid.get(`${lat + i}/${lon + j}`);
+        if (list) near.push(...list);
+      }
+    }
+    return near;
+  };
+}
+
+function haversine(a, b) {
+  const toRad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * toRad;
+  const dLon = (b.lon - a.lon) * toRad;
+  const lat = ((a.lat + b.lat) / 2) * toRad;
+  const x = dLon * Math.cos(lat);
+  return Math.sqrt(dLat * dLat + x * x) * 6371008.8;
 }
 
 const DOWNLOAD_ROUNDS = 3;

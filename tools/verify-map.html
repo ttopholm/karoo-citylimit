@@ -225,10 +225,11 @@
        gange 190.000, og så bliver bygningen aldrig færdig. */
     var waysAt = indexWaysByNode(ways);
     signs.forEach(function (sign) {
+      var node = roadNodeOf(sign);
       var bearings = [];
-      (waysAt.get(sign.id) || []).forEach(function (way) {
+      (waysAt.get(node) || []).forEach(function (way) {
         if (!way.geometry || way.geometry.length < 2) return;
-        var index = way.nodes.indexOf(sign.id);
+        var index = way.nodes.indexOf(node);
         if (index < 0) return;
         var a = way.geometry[Math.max(0, index - 1)];
         var b = way.geometry[Math.min(way.geometry.length - 1, index + 1)];
@@ -319,23 +320,29 @@
     return index;
   }
 
+  /* Knuden skiltet hører til i vejnettet: sig selv, eller den det blev sat på da det blev medbragt. */
+  function roadNodeOf(sign) {
+    return sign.roadNode != null ? sign.roadNode : sign.id;
+  }
+
   function builtUpDirection(sign, roadsAt, joinsAt) {
-    var own = roadsAt.get(sign.id) || [];
+    var node = roadNodeOf(sign);
+    var own = roadsAt.get(node) || [];
     if (own.length === 0) return null;
     var through = own.filter(function (way) {
-      var index = way.nodes.indexOf(sign.id);
+      var index = way.nodes.indexOf(node);
       return index > 0 && index < way.nodes.length - 1;
     });
-    if (through.length === 1) return zoneAcrossRoad(sign, through[0], joinsAt);
-    if (through.length === 0 && own.length >= 2) return zoneAtSplit(sign, own);
+    if (through.length === 1) return zoneAcrossRoad(sign, through[0], node, joinsAt);
+    if (through.length === 0 && own.length >= 2) return zoneAtSplit(sign, own, node);
     return null;
   }
 
   /* Skiltet er knuden hvor vejen skifter fart: ind er den vej der har byzonen. */
-  function zoneAtSplit(sign, own) {
+  function zoneAtSplit(sign, own, node) {
     var sides = [];
     own.forEach(function (way) {
-      var index = way.nodes.indexOf(sign.id);
+      var index = way.nodes.indexOf(node);
       var neighbour = way.geometry && way.geometry[index === 0 ? 1 : index - 1];
       if (!neighbour) return;
       sides.push({
@@ -349,9 +356,9 @@
   }
 
   /* Skiltet står midt i en byzonevej: den ende der løber ud på landevejen er vejen ud af byen. */
-  function zoneAcrossRoad(sign, way, joinsAt) {
+  function zoneAcrossRoad(sign, way, node, joinsAt) {
     if (zoneOf(way) !== 'urban') return null;
-    var index = way.nodes.indexOf(sign.id);
+    var index = way.nodes.indexOf(node);
     var last = way.nodes.length - 1;
     var ends = [];
     [[last, index + 1], [0, index - 1]].forEach(function (pair) {
@@ -597,6 +604,9 @@
       signs.push({
         id: element.id,
         position: position,
+        /* Et medbragt skilt er ikke selv en knude i vejnettet, men står ved siden af det. Så bærer
+           det knuden det hører til, og vejen slås op på den. */
+        roadNode: element.roadNode,
         name: signName || (place && place.name) || null,
         maxSpeed: (tags.maxspeed || '').trim() || null,
         entryHeading: entryHeading(position, place),

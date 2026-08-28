@@ -16,6 +16,11 @@ import timber.log.Timber
 data class RegionPack(
     val id: String,
     val name: String,
+    /**
+     * Who the data has to be credited to, when it is not OpenStreetMap. Norway's signs come from
+     * Statens vegvesen under NLOD, which asks to be named where the data is shown.
+     */
+    val credit: String? = null,
     val generatedAt: String? = null,
     val signs: Int = 0,
     val cells: Int = 0,

@@ -26,6 +26,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { collectFromDump } from './osm-dump.mjs';
+import { fetchNorwegianSigns, ATTRIBUTION as NVDB_ATTRIBUTION } from './nvdb-signs.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 vm.runInThisContext(
@@ -97,6 +98,20 @@ const REGIONS = [
       'https://download.geofabrik.de/europe/poland-latest.osm.pbf',
       'https://download.openstreetmap.fr/extracts/europe/poland.osm.pbf',
     ],
+  },
+  {
+    // Norway has no town-entry sign to map - "Tettbygd strøk" was withdrawn from the sign catalogue
+    // and the national road database holds one of them - so OpenStreetMap has 87 signs for the whole
+    // country. The place-name signs are there instead, from Statens vegvesen, and the roads they
+    // stand beside still come from the dump.
+    id: 'no',
+    name: 'Norge',
+    dump: [
+      'https://download.geofabrik.de/europe/norway-latest.osm.pbf',
+      'https://download.openstreetmap.fr/extracts/europe/norway.osm.pbf',
+    ],
+    signs: fetchNorwegianSigns,
+    credit: NVDB_ATTRIBUTION,
   },
   {
     id: 'fr',
@@ -503,6 +518,7 @@ async function build(region, generatedAt) {
   const index = {
     id: region.id,
     name: region.name,
+    ...(region.credit ? { credit: region.credit } : {}),
     generatedAt,
     signs: withDirection.length,
     signsWithRoad: withRoad,
