@@ -1,0 +1,91 @@
+name: Add a country
+description: Propose a region pack for a country that does not have one
+title: "Region pack: "
+labels: ["new country"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Whether a country can have a pack comes down to one question: **is there data that says
+        where the towns begin?** Everything below is there to answer it. You do not have to fill in
+        all of it — anything you know saves a look.
+
+  - type: input
+    id: country
+    attributes:
+      label: Country
+      placeholder: Czechia
+    validations:
+      required: true
+
+  - type: textarea
+    id: osm
+    attributes:
+      label: What does OpenStreetMap have?
+      description: |
+        The number of town-entry signs mapped there. [Overpass turbo](https://overpass-turbo.eu/)
+        answers it; substitute the country code and, if you know it, the national sign code.
+      value: |
+        ```
+        [out:json][timeout:300];
+        area["ISO3166-1"="CZ"][admin_level=2]->.a;
+        node(area.a)["traffic_sign"~"city_limit|CZ:IZ4a",i];
+        out count;
+        ```
+
+        Count:
+    validations:
+      required: false
+
+  - type: input
+    id: codes
+    attributes:
+      label: The sign's national codes
+      description: >
+        Entry and exit, as they appear on the sign. If the sign does not exist in that country's
+        catalogue, say so — that is an answer, and an important one.
+      placeholder: "entry CZ:IZ4a, exit CZ:IZ4b"
+
+  - type: textarea
+    id: authority
+    attributes:
+      label: If the map is thin, what does the road authority publish?
+      description: |
+        A few hundred signs for a country of two thousand towns is not enough — a pack that is
+        silent in most places reads as broken rather than absent. Where the map falls short, the
+        country itself often holds the answer, because a town boundary is a legal fact somebody had
+        to record. Norway's signs come from an open API; Sweden's boundaries from a file behind a
+        login, published as a release asset.
+
+        What to look for: the dataset's name, where it is downloaded from, whether it covers the
+        whole country, and what it actually contains — signs with positions, or the built-up area
+        as boundaries or as linework on the road network.
+      placeholder: |
+        Dataset:
+        Where from:
+        Covers the whole country: yes / no
+        Holds: signs / boundaries / road linework
+        Account or key needed:
+
+  - type: dropdown
+    id: licence
+    attributes:
+      label: Licence
+      description: >
+        The pack is a public file, so a licence that forbids redistribution or commercial use rules
+        a source out however good it is.
+      options:
+        - Public domain or CC0
+        - Attribution required (CC-BY, NLOD or similar)
+        - Something more restrictive
+        - Not stated anywhere
+        - Do not know
+
+  - type: textarea
+    id: anything
+    attributes:
+      label: Anything else
+      description: >
+        A link to the sign in that country's catalogue, a local peculiarity, or the reason you want
+        it. If you ride there, say what a town entrance actually looks like — that has settled more
+        than one of these.

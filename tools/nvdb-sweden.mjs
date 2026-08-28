@@ -269,12 +269,14 @@ function readPoint(raw) {
  * The layer as one line of well-known text per stretch of urban road.
  *
  * Written aside and renamed, so a run that dies halfway leaves nothing behind that the next one
- * would take for a finished file.
+ * would take for a finished file. The name aside still has to end in .csv: given anything else,
+ * ogr2ogr reads the output as a datasource and writes a directory with the layer's file inside it,
+ * which is a directory this then tries to read as a file.
  */
 async function toLinework(geopackage, csv, log) {
   log('  ogr2ogr …');
-  const partial = `${csv}.part`;
-  fs.rmSync(partial, { force: true });
+  const partial = csv.replace(/\.csv$/, '.part.csv');
+  fs.rmSync(partial, { force: true, recursive: true });
   await run('ogr2ogr', ['-f', 'CSV', partial, geopackage, LAYER, '-select', 'ELEMENT_ID', '-lco', 'GEOMETRY=AS_WKT'],
     'ogr2ogr blev ikke fundet (apt-get install gdal-bin)');
   fs.renameSync(partial, csv);
