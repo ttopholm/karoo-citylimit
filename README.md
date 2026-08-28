@@ -160,7 +160,8 @@ place-name sign, and 11,547 of them are in that database with a position and the
 them. It carries no speed limit, so it is not a town-entry sign in the legal sense, but it is what a
 rider actually sees on arriving somewhere.
 
-So the Norway pack is built from those, through
+Of the 11,547 signs, 11,383 sit within sixty metres of a road and 6,852 name a place that is mapped;
+the rest are the fjords, the valleys and the street names. The pack is built from those, through
 [NVDB's open API](https://nvdbapiles.atlas.vegvesen.no/) — no key needed. The signs are not nodes of
 the map, so each is tied to the road node nearest it while keeping its own position, and from there
 everything is as it is everywhere else: the road it stands beside gives the bearing, the speed zone
@@ -215,6 +216,7 @@ straight into the sign cache:
 | | signs | cells | files | size |
 | --- | ---: | ---: | ---: | ---: |
 | Denmark | 8,615 | 1,252 | 18 | 1.4 MB |
+| Norway | 6,852 | 2,882 | 15 | 1.1 MB |
 | Germany | 115,547 | 9,061 | 242 | 18.1 MB |
 
 Both are a rounding error next to the map downloads on the device, though Germany is a few hundred
