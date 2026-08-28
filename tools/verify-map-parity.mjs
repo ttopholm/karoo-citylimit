@@ -224,10 +224,19 @@ check('area centre gives a direction', Math.abs(areaOnly.signs[0]?.entryHeading 
 check('area is not parsed as a sign', C.parseResponse(JSON.stringify({ elements: [
   { type:'way', id: 600, center: { lat: 55.9, lon: 12.28 }, tags: { traffic_sign: 'city_limit', name: 'Vejby' } },
 ]})).signs.length === 0);
-check('node beats area centre for an unnamed sign', C.matchPlace({lat:55.90,lng:12.28}, null, [
-  { id: 1, position: {lat:55.896,lng:12.28}, name: 'Nodeby', kind: 'village', isArea: false },
-  { id: 2, position: {lat:55.899,lng:12.28}, name: 'Arealby', kind: 'suburb', isArea: true },
-]).id === 1);
+// A sign with no name belongs to the town it is deepest inside, not the nearest thing on the map.
+const unnamedAt = (lat) => [
+  { id: 1, position: { lat, lng: 12.28 }, name: 'Købstad', kind: 'town', isArea: false },
+  { id: 2, position: { lat: 55.8973, lng: 12.28 }, name: 'Udflyttergård', kind: 'hamlet', isArea: false },
+];
+check('a town outreaches a hamlet nearer by',
+  C.matchPlace({ lat: 55.90, lng: 12.28 }, null, unnamedAt(55.8865)).id === 1);
+check('a hamlet at the sign still wins',
+  C.matchPlace({ lat: 55.8974, lng: 12.28 }, null, unnamedAt(55.8865)).id === 2);
+check('an area centre is a town like any other', C.matchPlace({lat:55.90,lng:12.28}, null, [
+  { id: 1, position: {lat:55.896,lng:12.28}, name: 'Nodeby', kind: 'hamlet', isArea: false },
+  { id: 2, position: {lat:55.899,lng:12.28}, name: 'Arealby', kind: 'town', isArea: true },
+]).id === 2);
 check('named area beats unrelated node', C.matchPlace({lat:55.90,lng:12.28}, 'Skiltby', [
   { id: 1, position: {lat:55.898,lng:12.28}, name: 'Nabolandsby', kind: 'village', isArea: false },
   { id: 2, position: {lat:55.895,lng:12.28}, name: 'Skiltby', kind: 'town', isArea: true },

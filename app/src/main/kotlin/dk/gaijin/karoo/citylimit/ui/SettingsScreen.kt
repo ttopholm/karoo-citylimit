@@ -215,6 +215,13 @@ private fun RegionSection(
                         },
                         style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                     )
+                    // Norway's signs are not from OpenStreetMap, and the licence asks to be named.
+                    region.credit?.let { credit ->
+                        Text(
+                            text = credit,
+                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
                 Button(onClick = { onInstall(region) }, enabled = !busy) {
                     Text(

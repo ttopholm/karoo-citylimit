@@ -200,6 +200,7 @@
     var probe = probeMeters || 500;
     var minGap = minGapMeters || 100;
     signs.forEach(function (sign) {
+      if (sign.headingGiven) return;
       if (sign.roadBearing == null || !sign.place) return;
       var forward = destination(sign.position, probe, sign.roadBearing);
       var backward = destination(sign.position, probe, sign.roadBearing + 180);
@@ -220,21 +221,20 @@
    */
   function attachRoadBearings(signs, ways) {
     var AGREEMENT_DEG = 30;
+    /* Skiltet er en knude i vejen, så vejene slås op på knuden. Danmark klarede sig med at måle
+       afstanden til hvert punkt i hver vej, men det er skilte gange veje: i Tyskland er det 130.000
+       gange 190.000, og så bliver bygningen aldrig færdig. */
+    var waysAt = indexWaysByNode(ways);
     signs.forEach(function (sign) {
+      var node = roadNodeOf(sign);
       var bearings = [];
-      ways.forEach(function (way) {
+      (waysAt.get(node) || []).forEach(function (way) {
         if (!way.geometry || way.geometry.length < 2) return;
-        var index = -1, best = 3;  // meter: skiltet er en knude i vejen, så det er praktisk talt 0
-        way.geometry.forEach(function (point, j) {
-          var dx = (point.lon - sign.position.lng) * 111320 * Math.cos(toRad(sign.position.lat));
-          var dy = (point.lat - sign.position.lat) * 111320;
-          var d = Math.sqrt(dx * dx + dy * dy);
-          if (d < best) { best = d; index = j; }
-        });
+        var index = way.nodes.indexOf(node);
         if (index < 0) return;
         var a = way.geometry[Math.max(0, index - 1)];
         var b = way.geometry[Math.min(way.geometry.length - 1, index + 1)];
-        if (a === b) return;
+        if (!a || !b || a === b) return;
         bearings.push(bearing({ lat: a.lat, lng: a.lon }, { lat: b.lat, lng: b.lon }));
       });
       if (bearings.length === 0) return;
@@ -255,6 +255,16 @@
    */
   var URBAN_ZONE = /urban|:(20|30|40|50)$/;
   var RURAL_ZONE = /rural|:(60|70|80|90|100|110|120|130)$/;
+
+  /*
+   * Vejens fartzone, enten allerede afgjort eller læst af dens tags.
+   *
+   * Pakkebyggeren regner den ud mens den læser, og smider tags væk igen: Tyskland har 200.000
+   * skilteveje og en halv million naboveje, og deres tags alene fyldte mere hukommelse end der var.
+   */
+  function zoneOf(way) {
+    return way.zone !== undefined ? way.zone : speedZone(way.tags);
+  }
 
   function speedZone(tags) {
     var source = String((tags && (tags['source:maxspeed'] || tags['zone:maxspeed'])) || '').toLowerCase();
@@ -292,7 +302,7 @@
     var joinsAt = indexWaysByNode(joins);
     signs.forEach(function (sign) {
       // Retter en retning, finder ikke nye: skilte uden by er udeladt af andre grunde end retningen.
-      if (sign.entryHeading == null) return;
+      if (sign.entryHeading == null || sign.headingGiven) return;
       var heading = builtUpDirection(sign, roadsAt, joinsAt);
       if (heading != null) sign.entryHeading = heading;
     });
@@ -311,27 +321,33 @@
     return index;
   }
 
+  /* Knuden skiltet hører til i vejnettet: sig selv, eller den det blev sat på da det blev medbragt. */
+  function roadNodeOf(sign) {
+    return sign.roadNode != null ? sign.roadNode : sign.id;
+  }
+
   function builtUpDirection(sign, roadsAt, joinsAt) {
-    var own = roadsAt.get(sign.id) || [];
+    var node = roadNodeOf(sign);
+    var own = roadsAt.get(node) || [];
     if (own.length === 0) return null;
     var through = own.filter(function (way) {
-      var index = way.nodes.indexOf(sign.id);
+      var index = way.nodes.indexOf(node);
       return index > 0 && index < way.nodes.length - 1;
     });
-    if (through.length === 1) return zoneAcrossRoad(sign, through[0], joinsAt);
-    if (through.length === 0 && own.length >= 2) return zoneAtSplit(sign, own);
+    if (through.length === 1) return zoneAcrossRoad(sign, through[0], node, joinsAt);
+    if (through.length === 0 && own.length >= 2) return zoneAtSplit(sign, own, node);
     return null;
   }
 
   /* Skiltet er knuden hvor vejen skifter fart: ind er den vej der har byzonen. */
-  function zoneAtSplit(sign, own) {
+  function zoneAtSplit(sign, own, node) {
     var sides = [];
     own.forEach(function (way) {
-      var index = way.nodes.indexOf(sign.id);
+      var index = way.nodes.indexOf(node);
       var neighbour = way.geometry && way.geometry[index === 0 ? 1 : index - 1];
       if (!neighbour) return;
       sides.push({
-        zone: speedZone(way.tags),
+        zone: zoneOf(way),
         away: bearing(sign.position, { lat: neighbour.lat, lng: neighbour.lon })
       });
     });
@@ -341,9 +357,9 @@
   }
 
   /* Skiltet står midt i en byzonevej: den ende der løber ud på landevejen er vejen ud af byen. */
-  function zoneAcrossRoad(sign, way, joinsAt) {
-    if (speedZone(way.tags) !== 'urban') return null;
-    var index = way.nodes.indexOf(sign.id);
+  function zoneAcrossRoad(sign, way, node, joinsAt) {
+    if (zoneOf(way) !== 'urban') return null;
+    var index = way.nodes.indexOf(node);
     var last = way.nodes.length - 1;
     var ends = [];
     [[last, index + 1], [0, index - 1]].forEach(function (pair) {
@@ -354,7 +370,7 @@
       var zones = new Set();
       (joinsAt.get(way.nodes[endIndex]) || []).forEach(function (other) {
         if (other.id === way.id) return;
-        var zone = speedZone(other.tags);
+        var zone = zoneOf(other);
         if (zone) zones.add(zone);
       });
       if (zones.size !== 1) return;
@@ -441,9 +457,41 @@
    * det er entydigt - "Nykøbing" præfikser også hamlet'en "Nykøbing Lyng", så den mest betydelige by
    * vinder, og står to lige, er svaret intet match frem for et gæt.
    *
-   * Et skilt uden navn har intet at matche på, så den nærmeste by er det bedste gæt. Mappede bynoder
-   * vinder over arealmidter, fordi en node ligger i bymidten.
+   * Et skilt uden navn har intet at matche på, og så afgør mostPulling det.
    */
+  /*
+   * Byerne lagt i et gitter, så et opslag kun ser på de nærmeste. Cellerne er en halv grad, og der
+   * hentes en ring nok til at dække de 15 km en navngiven by må ligge væk - svaret er det samme som
+   * at gå hele listen igennem, for matchPlace måler afstanden selv.
+   */
+  var PLACE_CELL_DEG = 0.5;
+
+  function placeLookup(places) {
+    if (places.length < 2000) return function () { return places; };
+    var grid = new Map();
+    places.forEach(function (place) {
+      var id = Math.floor(place.position.lat / PLACE_CELL_DEG) + '/' +
+        Math.floor(place.position.lng / PLACE_CELL_DEG);
+      var list = grid.get(id);
+      if (!list) grid.set(id, list = []);
+      list.push(place);
+    });
+    return function (position) {
+      var rows = Math.ceil(MAX_NAMED_PLACE_DISTANCE_METERS / 111320 / PLACE_CELL_DEG);
+      var columns = Math.ceil(rows / Math.max(0.2, Math.cos(toRad(position.lat))));
+      var lat = Math.floor(position.lat / PLACE_CELL_DEG);
+      var lng = Math.floor(position.lng / PLACE_CELL_DEG);
+      var near = [];
+      for (var i = -rows; i <= rows; i++) {
+        for (var j = -columns; j <= columns; j++) {
+          var list = grid.get((lat + i) + '/' + (lng + j));
+          if (list) near = near.concat(list);
+        }
+      }
+      return near;
+    };
+  }
+
   function matchPlace(position, signName, places) {
     var normalized = (signName || '').trim().toLowerCase();
     if (normalized) {
@@ -454,9 +502,38 @@
       return exactMatch(position, spaced, nearby) || qualifiedMatch(spaced, nearby)
         || almostMatch(position, spaced, nearby);
     }
-    var nodes = places.filter(function (place) { return !place.isArea; });
-    var areas = places.filter(function (place) { return place.isArea; });
-    return nearestWithin(position, nodes) || nearestWithin(position, areas);
+    return mostPulling(position, places);
+  }
+
+  /*
+   * Byen et skilt uden navn hører til.
+   *
+   * Den nærmeste by er ikke svaret. Et byskilt står ved bygrænsen, og en større bys grænse ligger
+   * kilometer fra midten, så den nærmeste kortlagte by derude er som regel en udflyttergård: skiltet
+   * ind til Vimmerby fandt Åbro, ind til Ystad fandt Öja, ind til Århus fandt Saralyst.
+   *
+   * En by rækker efter et skilt så langt som den er stor. Afstanden divideres med rækkevidden, og
+   * den by der vinder er den, skiltet ligger dybest inde i. Vægtene er ikke gættet: Danmarks
+   * navngivne skilte siger selv hvilken by de hører til, og med navnet skjult skal reglen svare på
+   * egen hånd. Den nærmeste by rammer 87,1% af 7.717 skilte, disse vægte 90,3%. Prøvet af på
+   * Sverige, hvor de ikke er fundet, går den fra 76% til 89%.
+   *
+   * At en forstad rækker som en flække er ikke en fejl: place=suburb er en del af en by, ikke en by
+   * ved siden af, og må ikke tage skiltet fra den by den er en del af.
+   */
+  var PLACE_PULL = {
+    city: 8, town: 6, village: 3, suburb: 1, borough: 1, quarter: 1, neighbourhood: 1, hamlet: 1
+  };
+
+  function mostPulling(position, places) {
+    var best = null, bestScore = Infinity;
+    places.forEach(function (place) {
+      var away = distance(position, place.position);
+      if (away > MAX_NEAREST_PLACE_DISTANCE_METERS) return;
+      var score = away / (PLACE_PULL[(place.kind || '').toLowerCase()] || 1);
+      if (score < bestScore) { bestScore = score; best = place; }
+    });
+    return best;
   }
 
   function exactMatch(position, name, places) {
@@ -484,14 +561,6 @@
     var top = Math.max.apply(null, candidates.map(rank));
     var best = candidates.filter(function (place) { return rank(place) === top; });
     return best.length === 1 ? best[0] : null;
-  }
-
-  function nearestWithin(position, places) {
-    var candidate = nearest(position, places);
-    if (candidate && distance(position, candidate.position) <= MAX_NEAREST_PLACE_DISTANCE_METERS) {
-      return candidate;
-    }
-    return null;
   }
 
   function nearest(position, places) {
@@ -535,6 +604,11 @@
       });
     });
 
+    /* Et opslag ser kun på de byer der ligger tæt nok på til at komme i betragtning. En celle fra
+       Overpass har en håndfuld byer og mærker det ikke; et helt land har hundredtusinder, og at
+       måle afstanden til dem alle for hvert skilt er en bygning der aldrig bliver færdig. */
+    var placesNear = placeLookup(places);
+
     var signs = [], dropped = [];
     elements.forEach(function (element) {
       var tags = element.tags || {};
@@ -547,13 +621,19 @@
         return;
       }
       var signName = (tags.name || tags['city_limit:name'] || '').trim() || null;
-      var place = matchPlace(position, signName, places);
+      var place = matchPlace(position, signName, placesNear(position));
       signs.push({
         id: element.id,
         position: position,
+        /* Et medbragt skilt er ikke selv en knude i vejnettet, men står ved siden af det. Så bærer
+           det knuden det hører til, og vejen slås op på den. */
+        roadNode: element.roadNode,
         name: signName || (place && place.name) || null,
         maxSpeed: (tags.maxspeed || '').trim() || null,
-        entryHeading: entryHeading(position, place),
+        /* Sverige finder bygrænsen på vejen selv, så retningen ind i byen er målt og ikke gættet.
+           Den gælder stadig kun, når en by er fundet: uden by er der intet at melde. */
+        entryHeading: place && element.entryHeading != null ? element.entryHeading : entryHeading(position, place),
+        headingGiven: place != null && element.entryHeading != null,
         townId: place ? place.id : null,
         genericBoundary: !sides.directional,
         place: place,
@@ -769,6 +849,7 @@
     attachRoadBearings: attachRoadBearings,
     alignEntryHeadings: alignEntryHeadings,
     speedZone: speedZone,
+    zoneOf: zoneOf,
     orientBySpeedZone: orientBySpeedZone,
     classify: classify,
     matchPlace: matchPlace,

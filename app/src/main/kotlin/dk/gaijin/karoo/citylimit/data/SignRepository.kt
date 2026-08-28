@@ -87,12 +87,15 @@ class SignRepository(
 
             var completed = 0
             var signCount = 0
+            // The cache is one file, rewritten whole on every write. With a country pack installed
+            // that file is megabytes, so the cells fetched here are collected and written once.
+            val fetched = LinkedHashMap<String, List<CityLimitSign>>()
             _status.value = DownloadStatus.Downloading(0, pending.size)
             for (key in pending) {
                 waitForSlot()
                 val result = fetchCell(key, overpassUrl)
                 result.onSuccess { signs ->
-                    cache.put(key, signs, now())
+                    fetched[key.id] = signs
                     retryAfter.remove(key.id)
                     consecutiveFailures = 0
                     completed++
@@ -104,6 +107,7 @@ class SignRepository(
                     val backoff = backoffMillis()
                     retryAfter[key.id] = now() + backoff
                     Timber.w(throwable, "Sign download failed for cell %s, retrying in %d s", key.id, backoff / 1000)
+                    cache.putAll(fetched, now())
                     _status.value = DownloadStatus.Failed(
                         message = throwable.message ?: throwable.javaClass.simpleName,
                         at = now(),
@@ -112,6 +116,7 @@ class SignRepository(
                     return
                 }
             }
+            cache.putAll(fetched, now())
             _status.value = DownloadStatus.Done(cells = completed, signs = signCount, at = now())
         }
     }

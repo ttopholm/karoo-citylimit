@@ -50,8 +50,19 @@ Town boundaries come from OpenStreetMap. Two things have to be true before you g
    Falling back to the nearest place
    for a named sign points the arrow at whatever village happens to be closest: signs reading
    "Lyngen" in Odsherred, where no place of that name exists, ended up pointing at neighbouring
-   hamlets, and at a different one depending on which area had been downloaded. Only a sign with no
-   name at all falls back to the nearest place, preferring a mapped node over the centre of an area.
+   hamlets, and at a different one depending on which area had been downloaded.
+
+   A sign with no name on it has nothing to match, and there the nearest place is not the answer
+   either. A sign stands at the town boundary, and a larger town's boundary is kilometres from its
+   centre, so the nearest mapped place out there is usually an outlying farm: the sign into Vimmerby
+   found Åbro, the one into Ystad found Öja, the one into Aarhus found Saralyst. Instead a place
+   reaches for a sign as far as it is large — a city eight times as far as a hamlet, a town six — and
+   the one that wins is the one the sign lies deepest inside. A `place=suburb` reaches no further
+   than a hamlet on purpose: it is a part of a town, not a town beside it, and must not take the sign
+   from the town it belongs to. The weights are not guessed. Denmark's named signs say which town
+   they belong to, and with the name hidden the rule has to answer on its own: the nearest place gets
+   87.1% of 7,717 signs right, these weights 90.3%. Tried on Sweden, where they were not found, it
+   goes from 76% to 89%.
 
    Places are collected from 5 km beyond the area the signs come from, so a sign near the edge can
    still find the town it names, and the same sign always resolves the same way regardless of which
@@ -133,11 +144,98 @@ Riding an area once caches it for 90 days, and a loaded route is prefetched cell
 still need a connection the first time. A region pack removes that: it puts a whole country on the
 device before you leave home.
 
+### Which countries
+
+A town-entry sign only helps where somebody has mapped it, and that varies enormously — Germany has
+130,000 of them and Sweden 503, though one is next door and the other is a bridge away. These are
+the counts in OpenStreetMap in August 2026, for the countries a rider from here might reach:
+
+| | | | |
+| --- | ---: | --- | ---: |
+| **Germany** | 129,870 | Czechia | 8,305 |
+| **France** | 45,449 | Belgium | 3,352 |
+| **Poland** | 16,089 | Switzerland | 2,576 |
+| **Netherlands** | 15,200 | Spain | 2,505 |
+| **Austria** | 15,155 | Finland | 2,042 |
+| Italy | 12,281 | Britain | 967 |
+| | | Sweden | 503 |
+| | | **Norway** | 87 |
+
+Denmark and the five in bold are the ones built. Italy and Czechia are next in line.
+
+Sweden and Norway are the obvious neighbours and the worst served by the map, and for both the
+answer came from the national road authority instead.
+
+#### Norway: the sign does not exist
+
+For Norway the reason is not that nobody mapped them. "Tettbygd strøk" was withdrawn from the
+Norwegian sign catalogue, and Statens vegvesen's national road database holds exactly one of them in
+the whole country — so there is nothing there to find. What Norway has instead is the plain white
+place-name sign, and 11,547 of them are in that database with a position and the name written on
+them. It carries no speed limit, so it is not a town-entry sign in the legal sense, but it is what a
+rider actually sees on arriving somewhere.
+
+Of the 11,547 signs, 11,383 sit within sixty metres of a road and 6,852 name a place that is mapped;
+the rest are the fjords, the valleys and the street names. The pack is built from those, through
+[NVDB's open API](https://nvdbapiles.atlas.vegvesen.no/) — no key needed. The signs are not nodes of
+the map, so each is tied to the road node nearest it while keeping its own position, and from there
+everything is as it is everywhere else: the road it stands beside gives the bearing, the speed zone
+either side gives the direction into town, and a sign whose name matches no mapped place is dropped.
+That last rule is also what keeps the fjords out — a place-name sign marks valleys and rivers too,
+and *Glomma* is not a town.
+
+The data is used under the [Norwegian Licence for Public
+Data](https://www.nvdb.no/rammer-regelverk/vilkar-og-ansvar/vilkar-for-bruk-av-data/), which asks to
+be named: *Inneholder data under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens
+vegvesen.* The pack carries that line and the settings screen shows it.
+
+#### Sweden: the boundary is public, the signs are not
+
+Sweden signs a town with E5 *Tättbebyggt område*, and where that sign stands is not a matter of
+taste: the built-up area is decided by the municipality, and the decision is recorded against the
+road network in [NVDB](https://www.nvdb.se/). So the boundary itself is open data even though the
+signs are not — which is just as well, because of the 492 town signs the extract carries, **164
+stand more than a kilometre from any built-up area**. Those are the plain white place-name signs at
+hamlets, mapped under the same tag. What is left is a few hundred signs for a country of two
+thousand towns.
+
+The data product is *Tättbebyggt område*, ordered from
+[Lastkajen](https://lastkajen.trafikverket.se/) and published as an asset on the packs release: one
+GeoPackage layer, every stretch of road inside a built-up area, 98,436 km of it. It carries no place
+name — the only attribute is the municipal decision it rests on, `1265 2024:28` — so the town is
+named afterwards from the nearest mapped place, exactly as an unnamed Danish sign is.
+
+Finding the boundary is the whole job, and it is done by asking the built-up area about the *map's*
+roads rather than by reading NVDB's own topology. A boundary sometimes falls in the middle of a road
+link and sometimes exactly on one of its ends, and telling the second case from a cul-de-sac needs
+the roads outside the town, which this data product does not carry. Turned around, the question is
+easy: the built-up area becomes a grid of eleven-metre cells, every node of every rideable road is
+asked whether it stands in one, and a boundary is where the answer changes from one node to the
+next. Two nodes can be a hundred metres apart, so the gap is halved twelve times to pin the boundary
+down, and footways and cycle tracks are left out because nobody signs those.
+
+That also settles the direction into town — it is the way the answer changes — which is the one
+thing a Danish sign never says outright, and it is why the Swedish signs skip the speed-zone
+correction the others go through.
+
+Held up against the 344 mapped signs that do stand at a built-up area, the pack has a boundary
+within 100 m of 73% of them, within 200 m of 82% and within 400 m of 90%; the rest is mostly the
+physical sign standing where it made sense rather than on the decision line. Where both name a town,
+86% agree on which one. The data is
+[CC0](https://creativecommons.org/publicdomain/zero/1.0/) — no attribution required — and the pack
+names the source anyway.
+
+### How they are built
+
 Packs are built by `tools/build-packs.mjs`, which runs the same classification and town matching as
 the extension and writes the result as grid cells split into files under 100 KB — small enough to
 also come through the Karoo system's HTTP API when the device has no Wi-Fi of its own.
 `.github/workflows/packs.yml` rebuilds them monthly and publishes them under the fixed `packs`
-release, so the download URL never changes. That release is marked as a pre-release on purpose:
+release, so the download URL never changes. Each country is built on its own runner: Germany is a
+five gigabyte download where Denmark is half a one, and one country's mirror having a bad day is no
+reason to leave the rest unbuilt. `tools/merge-catalog.mjs` then writes the catalogue the app reads,
+keeping the entry of any country that was not rebuilt this time — otherwise it would vanish from
+the list while its pack sat on the release. That release is marked as a pre-release on purpose:
 GitHub resolves `/releases/latest` to the newest release that is neither draft nor pre-release, and
 the app reads `manifest.json` from there to find updates — an ordinary packs release takes that spot
 and the update check starts returning 404.
@@ -164,8 +262,20 @@ old. A build that fails is easy to see; one that half-works is not, and a pack q
 is silent exactly where a town used to be announced. A drop of more than 5% stops the run.
 
 On the device, *Download a region* in the settings screen lists what is available and installs a pack
-straight into the sign cache. Denmark holds around 9,000 town-entry signs, which comes to roughly a
-megabyte spread over some 16 files — a rounding error next to the map downloads on the device.
+straight into the sign cache:
+
+| | signs | cells | files | size |
+| --- | ---: | ---: | ---: | ---: |
+| Denmark | 8,635 | 1,257 | 18 | 1.4 MB |
+| Norway | 6,852 | 2,882 | 15 | 1.1 MB |
+| Sweden | 46,284 | 2,836 | 100 | 7.1 MB |
+| Germany | 115,547 | 9,061 | 242 | 18.1 MB |
+
+These are a rounding error next to the map downloads on the device, though Germany is a few hundred
+requests rather than a few. The sign cache holds 20,000 cells, which is the largest country with
+room beside it — two or three countries fit, and installing every one would push the oldest cells off
+the end. Sweden is large for its population because a pack built from boundaries finds every road
+that crosses one, where a pack built from the map finds only the signs somebody stood in front of.
 
 Signs are clipped to the region's own borders, so the Danish pack does not quietly carry Skåne and
 Schleswig along with it. Places are deliberately not clipped: a sign near a border still has to find

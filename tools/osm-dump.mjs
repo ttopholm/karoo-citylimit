@@ -36,8 +36,12 @@ const SIGN_KEY = /^traffic_sign(:(forward|backward|both))?$/;
  *
  * @param region a REGIONS entry, needing a `dump` URL
  * @param workDir where the dump and the files osmium writes are kept
+ * @param logic the shared logic block: `isSign` tells a town sign from any other traffic sign -
+ *   osmium can filter on the key but not on the value, and in Germany every stop sign carries that
+ *   key too - and `speedZone` settles a road's zone while it is read, so its tags can be let go
  */
-export async function collectFromDump(region, workDir, log = console.log) {
+export async function collectFromDump(region, workDir, logic, log = console.log) {
+  const { isSign, speedZone } = logic;
   fs.mkdirSync(workDir, { recursive: true });
   const file = (name) => path.join(workDir, `${region.id}-${name}`);
 
@@ -45,14 +49,10 @@ export async function collectFromDump(region, workDir, log = console.log) {
   await download(region.dump, dump, log);
 
   const roadsPbf = file('roads.osm.pbf');
-  const roadsOpl = file('roads.opl');
   const placesPbf = file('places.osm.pbf');
   const placesJson = file('places.geojsonseq');
 
   await osmium(['tags-filter', '-o', roadsPbf, '--overwrite', dump, SIGN_KEYS, 'w/highway'], log);
-  // Without the metadata each line is "n<id> T<tags> x<lon> y<lat>" or "w<id> T<tags> Nn<id>,…",
-  // which is half the size and needs no parser worth the name.
-  await osmium(['cat', '-f', 'opl,add_metadata=false', '-o', roadsOpl, '--overwrite', roadsPbf], log);
   await osmium(['tags-filter', '-o', placesPbf, '--overwrite', dump, `nwr/place=${PLACE_VALUES}`], log);
   // export assembles the multipolygons, so a town mapped as an area comes back as one shape rather
   // than a pile of member ways.
@@ -61,15 +61,39 @@ export async function collectFromDump(region, workDir, log = console.log) {
   const places = readPlaces(placesJson);
   log(`  ${places.length} byer`);
 
+  // A country whose signs are not in OpenStreetMap brings its own. They are placed on the road
+  // network here rather than being nodes of it, so each is tied to the nearest road node - which
+  // is what the road bearing and the speed zone are read from - while keeping its own position.
+  const brought = region.signs ? await region.signs({ roadsPbf, workDir, log }) : [];
+  // A sign that already knows its road node needs no snapping: Sweden's boundaries are found on the
+  // road network itself, so the node is where they come from rather than something to look up.
+  const loose = brought.filter((sign) => sign.roadNode == null);
+  const broughtNear = signLookup(loose);
+  const nearest = new Map();
+  let placed = false;
+
   // The dump is sorted: every node comes before every way, so one pass finds the sign nodes and,
   // still in the same pass, the roads they stand on.
   const signs = [];
   const signIds = new Set();
   const roads = new Map();
-  await eachLine(roadsOpl, (line) => {
+  await eachRoadLine(roadsPbf, log, (line) => {
     if (line.charCodeAt(0) === 110 /* n */) {
-      const node = readNode(line);
+      const node = readNode(line, brought.length === 0);
+      if (brought.length > 0) {
+        for (const sign of broughtNear(node)) {
+          const metres = haversine(sign, node);
+          if (metres > MAX_SNAP_METERS) continue;
+          const best = nearest.get(sign.id);
+          if (!best || metres < best.metres) nearest.set(sign.id, { node: node.id, metres });
+        }
+        return;
+      }
       if (!node || !Object.keys(node.tags).some((key) => SIGN_KEY.test(key))) return;
+      // Germany tags 381,059 nodes with traffic_sign and only 130,000 of them mark a town. Taking
+      // the rest along means every road they stand on and every road meeting those, which is where
+      // the build ran out of memory.
+      if (!isSign(node.tags)) return;
       // A handful of nodes come out of the extract twice; a sign announced twice is a sign
       // announced twice.
       if (signIds.has(node.id)) return;
@@ -78,9 +102,33 @@ export async function collectFromDump(region, workDir, log = console.log) {
       return;
     }
     if (line.charCodeAt(0) !== 119 /* w */) return;
+    // Every node is read before the first way, so this is where the brought signs know their road.
+    if (brought.length > 0 && !placed) {
+      placed = true;
+      for (const sign of brought) {
+        const node = sign.roadNode ?? nearest.get(sign.id)?.node;
+        if (node == null) continue;
+        signs.push({
+          type: 'node',
+          id: sign.id,
+          lat: sign.lat,
+          lon: sign.lon,
+          roadNode: node,
+          // A boundary read off the road already says which way is into town; a sign photographed
+          // beside the road does not, and has it worked out from the town and the speed zone.
+          entryHeading: sign.entryHeading,
+          tags: { name: sign.name, traffic_sign: 'city_limit' },
+        });
+        signIds.add(node);
+      }
+      log(`  ${signs.length} af ${brought.length} medbragte skilte fandt en vej`);
+    }
     const way = readWay(line);
     if (!way?.tags.highway) return;
-    if (way.nodes.some((node) => signIds.has(node))) roads.set(way.id, way);
+    if (!way.nodes.some((node) => signIds.has(node))) return;
+    // Only the zone is wanted from the tags, and 200,000 sets of German road tags is more memory
+    // than there is. Settle it here and let the rest go.
+    roads.set(way.id, { id: way.id, nodes: way.nodes, zone: speedZone(way.tags) });
   });
   log(`  ${signs.length} skiltenoder på ${roads.size} veje`);
 
@@ -95,7 +143,7 @@ export async function collectFromDump(region, workDir, log = console.log) {
   }
   const coordinates = new Map();
   const joins = new Map();
-  await eachLine(roadsOpl, (line) => {
+  await eachRoadLine(roadsPbf, log, (line) => {
     if (line.charCodeAt(0) === 110 /* n */) {
       const node = readNode(line, false);
       if (node && wanted.has(node.id)) coordinates.set(node.id, { lat: node.lat, lon: node.lon });
@@ -105,8 +153,9 @@ export async function collectFromDump(region, workDir, log = console.log) {
     const way = readWay(line);
     if (!way?.tags.highway) return;
     const touching = way.nodes.filter((node) => ends.has(node));
-    // Only the nodes at the road ends are carried on; the full node lists would run to gigabytes.
-    if (touching.length > 0) joins.set(way.id, { id: way.id, nodes: touching, tags: way.tags });
+    // Only the nodes at the road ends are carried on, and only the zone of the tags; the full lists
+    // of either would run to gigabytes.
+    if (touching.length > 0) joins.set(way.id, { id: way.id, nodes: touching, zone: speedZone(way.tags) });
   });
 
   for (const road of roads.values()) {
@@ -121,6 +170,44 @@ export async function collectFromDump(region, workDir, log = console.log) {
   return { elements: [...signs, ...places], roads: drawn, joins: [...joins.values()] };
 }
 
+/** How far a brought sign may be from a road node before it is taken to belong to no road. */
+const MAX_SNAP_METERS = 60;
+
+/* Signs in a grid, so a node asks about the few near it rather than all eleven thousand. */
+function signLookup(signs) {
+  if (signs.length === 0) return () => [];
+  const cell = 0.01;
+  const grid = new Map();
+  for (const sign of signs) {
+    const id = `${Math.floor(sign.lat / cell)}/${Math.floor(sign.lon / cell)}`;
+    let list = grid.get(id);
+    if (!list) grid.set(id, list = []);
+    list.push(sign);
+  }
+  return (point) => {
+    if (!point) return [];
+    const lat = Math.floor(point.lat / cell);
+    const lon = Math.floor(point.lon / cell);
+    const near = [];
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        const list = grid.get(`${lat + i}/${lon + j}`);
+        if (list) near.push(...list);
+      }
+    }
+    return near;
+  };
+}
+
+function haversine(a, b) {
+  const toRad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * toRad;
+  const dLon = (b.lon - a.lon) * toRad;
+  const lat = ((a.lat + b.lat) / 2) * toRad;
+  const x = dLon * Math.cos(lat);
+  return Math.sqrt(dLat * dLat + x * x) * 6371008.8;
+}
+
 const DOWNLOAD_ROUNDS = 3;
 const DOWNLOAD_TIMEOUT_MS = 20 * 60_000;
 
@@ -132,7 +219,7 @@ const DOWNLOAD_TIMEOUT_MS = 20 * 60_000;
  * build that stops because one host will not answer is a build that does not run: the first attempt
  * from a GitHub runner never got a connection to it at all.
  */
-async function download(mirrors, target, log) {
+export async function download(mirrors, target, log) {
   const urls = [mirrors].flat().filter(Boolean);
   if (urls.length === 0) throw new Error('Regionen har ingen dump-adresse');
   if (fs.existsSync(target) && fs.statSync(target).size > 0) {
@@ -196,12 +283,33 @@ function osmium(args, log) {
   });
 }
 
-async function eachLine(file, onLine) {
-  const reader = readline.createInterface({
-    input: fs.createReadStream(file, { highWaterMark: 1 << 20 }),
-    crlfDelay: Infinity,
+/*
+ * Reads the filtered roads as text, one object per line, straight out of osmium.
+ *
+ * Without the metadata each line is "n<id> T<tags> x<lon> y<lat>" or "w<id> T<tags> Nn<id>,…", which
+ * needs no parser worth the name. It is read twice - once to find the sign roads, once to pick up
+ * what they are drawn from - and piped rather than written down: Germany's road extract is six
+ * gigabytes as text, and a second minute of osmium is cheaper than the disk to hold it.
+ */
+async function eachRoadLine(pbf, log, onLine) {
+  log('  osmium cat …');
+  const child = spawn('osmium', ['cat', '-f', 'opl,add_metadata=false', '-o', '-', pbf], {
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
+  let complaint = '';
+  child.stderr.on('data', (chunk) => { complaint += chunk; });
+  const finished = new Promise((resolve, reject) => {
+    child.on('error', (error) => reject(new Error(
+      error.code === 'ENOENT' ? 'osmium blev ikke fundet (apt-get install osmium-tool)' : error.message,
+    )));
+    child.on('close', (code) => (code === 0
+      ? resolve()
+      : reject(new Error(`osmium cat fejlede (${code}): ${complaint.trim().slice(0, 400)}`))));
+  });
+
+  const reader = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
   for await (const line of reader) if (line.length > 0) onLine(line);
+  await finished;
 }
 
 /*
@@ -279,7 +387,15 @@ function readPlaces(file) {
     const type = marker[0] === 'n' ? 'node' : (area && number % 2 === 1) ? 'relation' : 'way';
     const id = area ? Math.floor(number / 2) : number;
     if (area && type === 'way') assembled.add(id);
-    features.push({ id, type, area, middle: centre(feature.geometry), tags: feature.properties ?? {} });
+    const tags = feature.properties ?? {};
+    features.push({
+      id,
+      type,
+      area,
+      middle: centre(feature.geometry),
+      // A German place carries a dozen tags and there are 97,047 of them; two are read.
+      tags: { place: tags.place, ...(tags.name ? { name: tags.name } : {}) },
+    });
   }
 
   const places = [];
