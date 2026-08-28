@@ -144,11 +144,14 @@ Riding an area once caches it for 90 days, and a loaded route is prefetched cell
 still need a connection the first time. A region pack removes that: it puts a whole country on the
 device before you leave home.
 
-### Which countries
+### Which countries, and why
 
-A town-entry sign only helps where somebody has mapped it, and that varies enormously — Germany has
-130,000 of them and Sweden 503, though one is next door and the other is a bridge away. These are
-the counts in OpenStreetMap in August 2026, for the countries a rider from here might reach:
+Which countries are here is not a matter of preference. It is one question — **is there data that
+says where the towns begin?** — and that question has three answers.
+
+**The map knows.** Where enough riders have mapped the sign, the country's OpenStreetMap extract is
+the whole story, and adding it is a few lines. That varies enormously; these are the counts in
+August 2026, for the countries a rider from here might reach:
 
 | | | | |
 | --- | ---: | --- | ---: |
@@ -159,12 +162,30 @@ the counts in OpenStreetMap in August 2026, for the countries a rider from here 
 | **Austria** | 15,155 | Finland | 2,042 |
 | Italy | 12,281 | Britain | 967 |
 | | | Sweden | 503 |
-| | | **Norway** | 87 |
+| | | Norway | 87 |
 
-Denmark and the five in bold are the ones built. Italy and Czechia are next in line.
+**The road authority knows.** Where the map is thin, the country itself often holds the answer,
+because a town boundary is a legal fact somebody had to record. Norway and Sweden are both here, for
+different reasons, and both are worth reading as examples of what a second source can look like.
 
-Sweden and Norway are the obvious neighbours and the worst served by the map, and for both the
-answer came from the national road authority instead.
+**Nobody knows yet.** Then the country waits. A pack of a few hundred signs for a country of two
+thousand towns is worse than none: it is silent in most places and speaks in a few, which reads as a
+broken feature rather than an absent one.
+
+What is built today:
+
+| | signs | source | licence |
+| --- | ---: | --- | --- |
+| Denmark | 8,635 | OpenStreetMap | ODbL |
+| Germany | 115,547 | OpenStreetMap | ODbL |
+| Sweden | 46,284 | Trafikverket NVDB, via Lastkajen | CC0 |
+| Norway | 6,852 | Statens vegvesen NVDB, open API | NLOD |
+| France, Poland, Netherlands, Austria | — | OpenStreetMap | ODbL |
+
+The last row is configured and not yet built. Italy and Czechia are the next map-backed candidates.
+
+Sweden and Norway are the neighbours worst served by the map, and for both the answer came from the
+national road authority instead.
 
 #### Norway: the sign does not exist
 
@@ -281,15 +302,40 @@ Signs are clipped to the region's own borders, so the Danish pack does not quiet
 Schleswig along with it. Places are deliberately not clipped: a sign near a border still has to find
 the town it names, whichever country that town is in.
 
-Building or adding a region locally:
+Building a region locally:
 
 ```bash
 node tools/build-packs.mjs --region dk --out build/packs
-node tools/build-packs.mjs --region dk --bounds 55.8,11.4,56.0,11.8   # a corner, for a quick try
+node tools/build-packs.mjs --list                                     # the region ids
+node tools/build-packs.mjs --region dk --bounds 55.8,11.4,56.0,11.8   # a corner, via --source overpass
 ```
 
-A new country is a few lines in `REGIONS` at the top of the script: an id, a display name, its
-bounding box, and how finely to tile the Overpass queries.
+### Adding a country
+
+**Open an issue first** — [*Add a country*](https://github.com/ttopholm/karoo-citylimit/issues/new?template=new-country.yml)
+— because the work depends entirely on what the answer to the data question turns out to be, and
+that is settled by looking rather than by coding. The template asks for what settles it: how many
+signs the map has, whether the sign exists in that country's catalogue at all, and if the map is
+thin, what the road authority publishes and under what licence.
+
+Once the source is known, one of two things happens.
+
+**The map is enough.** A few lines in `REGIONS` at the top of `tools/build-packs.mjs`: an id, a
+display name, and the mirrors its extract is fetched from. If the sign carries a national code, it
+also goes in `TrafficSignCodes` so entry is told from exit. That is the whole change.
+
+**The map is not enough.** Then the country brings its own signs, as Norway and Sweden do. A module
+in `tools/` exports a function that returns `{ id, lat, lon }` for each sign — optionally with
+`name`, `roadNode` and `entryHeading` when the source knows them — and the region names it as
+`signs`. Everything after that is shared: the sign is tied to a road, the town is matched, the
+direction is worked out, and a sign that finds no town is dropped. `tools/nvdb-signs.mjs` reads a
+live API; `tools/nvdb-sweden.mjs` reads a file published as a release asset, which is how a source
+behind a login is used without putting the login anywhere.
+
+Two things are worth knowing before starting the second kind. A licence that forbids commercial use
+or redistribution rules a source out, whatever else it offers — the pack is a public file. And a
+source is only worth the work if it is *national*: a dataset covering one region makes a pack that
+is silent everywhere else, which is the failure mode this is trying to avoid.
 
 ## Settings
 
