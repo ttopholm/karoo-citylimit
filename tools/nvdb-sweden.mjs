@@ -55,7 +55,26 @@ const LAT_STEP = 0.0001;
 const LON_STEP = 0.0002;
 
 /** The roads a town sign is put up on. A footpath crossing the boundary carries no sign. */
-const RIDEABLE = /^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street)(_link)?$/;
+const RIDEABLE = /^(trunk|primary|secondary|tertiary|unclassified|residential|living_street)(_link)?$/;
+
+/*
+ * A road nobody may cycle on has no sign worth carrying.
+ *
+ * The boundary is found on the map's roads, and a motorway crosses it like anything else: 3,092 of
+ * Sweden's 46,331 crossings stood on one. They can never be reached lawfully, and they are not
+ * merely wasted - the alert does not require the rider to be *on* the sign's road, only within two
+ * hundred metres of it, ahead of it, and pointing the same way. A slip road running alongside the
+ * road actually being ridden satisfies all three.
+ *
+ * motorroad=yes is the same prohibition without the motorway class, so it goes too.
+ *
+ * bicycle=no stays. On an ordinary road it usually means the cycle track beside it is where you
+ * belong, and the sign is still the sign you ride past. A false alert from one needs a rider within
+ * two hundred metres pointing the same way, which is very nearly a description of that cycle track.
+ */
+function forbiddenToCycle(tags) {
+  return /^motorway/.test(tags.highway) || tags.motorroad === 'yes';
+}
 
 /** How finely the boundary is pinned down between the two nodes it falls between. */
 const BISECTIONS = 12;
@@ -104,7 +123,7 @@ export async function fetchSwedishBoundaries({ roadsPbf, workDir, log = console.
     }
     if (kind !== 119 /* w */) return;
     const way = readWay(line);
-    if (!way || !RIDEABLE.test(way.highway)) return;
+    if (!way || !RIDEABLE.test(way.highway) || forbiddenToCycle(way.tags)) return;
     ways++;
     let was = urbanNodes.has(way.nodes[0]);
     for (let i = 1; i < way.nodes.length; i++) {
@@ -328,26 +347,33 @@ function readNode(line) {
 
 function readWay(line) {
   const fields = line.split(' ');
-  let highway = '';
+  let tags = {};
   let list = '';
   for (let i = 1; i < fields.length; i++) {
-    if (fields[i].charCodeAt(0) === 84 /* T */) highway = highwayOf(fields[i]);
+    if (fields[i].charCodeAt(0) === 84 /* T */) tags = readTags(fields[i]);
     else if (fields[i].charCodeAt(0) === 78 /* N */) list = fields[i];
   }
-  if (!highway || list.length < 2) return null;
+  if (!tags.highway || list.length < 2) return null;
   const nodes = list.slice(1).split(',').map((node) => Number(node.slice(1)));
-  return nodes.length < 2 ? null : { highway, nodes };
+  return nodes.length < 2 ? null : { highway: tags.highway, tags, nodes };
 }
 
 const unescape = (text) => (text.includes('%')
   ? text.replace(/%([0-9A-Fa-f]+)%/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
   : text);
 
-function highwayOf(field) {
+/* Only the three tags this reads; a Swedish road carries a dozen and there are 642,506 of them. */
+const WANTED_TAGS = new Set(['highway', 'motorroad', 'bicycle']);
+
+function readTags(field) {
+  const tags = {};
   for (const pair of field.slice(1).split(',')) {
-    if (pair.startsWith('highway=')) return unescape(pair.slice(8));
+    const split = pair.indexOf('=');
+    if (split < 0) continue;
+    const key = unescape(pair.slice(0, split));
+    if (WANTED_TAGS.has(key)) tags[key] = unescape(pair.slice(split + 1));
   }
-  return '';
+  return tags;
 }
 
 function bearing(from, to) {

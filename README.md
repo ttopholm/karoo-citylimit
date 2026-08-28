@@ -178,7 +178,7 @@ What is built today:
 | --- | ---: | --- | --- |
 | Denmark | 8,635 | OpenStreetMap | ODbL |
 | Germany | 115,547 | OpenStreetMap | ODbL |
-| Sweden | 46,284 | Trafikverket NVDB, via Lastkajen | CC0 |
+| Sweden | 42,938 | Trafikverket NVDB, via Lastkajen | CC0 |
 | Norway | 6,852 | Statens vegvesen NVDB, open API | NLOD |
 | France, Poland, Netherlands, Austria | — | OpenStreetMap | ODbL |
 
@@ -233,14 +233,18 @@ the roads outside the town, which this data product does not carry. Turned aroun
 easy: the built-up area becomes a grid of eleven-metre cells, every node of every rideable road is
 asked whether it stands in one, and a boundary is where the answer changes from one node to the
 next. Two nodes can be a hundred metres apart, so the gap is halved twelve times to pin the boundary
-down, and footways and cycle tracks are left out because nobody signs those.
+down. Footways and cycle tracks are left out because nobody signs those, and so are motorways and
+`motorroad=yes`: a rider may not be there, and a slip road running alongside the road actually being
+ridden is close enough, aligned enough and far enough ahead to set the alert off. That removed 3,346
+of 46,284 boundaries and not one grid cell — the 43 places left with nothing were motorway junctions
+inside cities, Gothenburg's E6/E20 interchange among them.
 
 That also settles the direction into town — it is the way the answer changes — which is the one
 thing a Danish sign never says outright, and it is why the Swedish signs skip the speed-zone
 correction the others go through.
 
 Held up against the 344 mapped signs that do stand at a built-up area, the pack has a boundary
-within 100 m of 73% of them, within 200 m of 82% and within 400 m of 90%; the rest is mostly the
+within 100 m of 72% of them, within 200 m of 82% and within 400 m of 90%; the rest is mostly the
 physical sign standing where it made sense rather than on the decision line. Where both name a town,
 86% agree on which one. The data is
 [CC0](https://creativecommons.org/publicdomain/zero/1.0/) — no attribution required — and the pack
@@ -289,7 +293,7 @@ straight into the sign cache:
 | --- | ---: | ---: | ---: | ---: |
 | Denmark | 8,635 | 1,257 | 18 | 1.4 MB |
 | Norway | 6,852 | 2,882 | 15 | 1.1 MB |
-| Sweden | 46,284 | 2,836 | 100 | 7.1 MB |
+| Sweden | 42,938 | 2,836 | 90 | 6.6 MB |
 | Germany | 115,547 | 9,061 | 242 | 18.1 MB |
 
 These are a rounding error next to the map downloads on the device, though Germany is a few hundred
