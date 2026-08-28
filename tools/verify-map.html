@@ -940,6 +940,29 @@
       kind + '/' + id + '</a>';
   }
 
+  /*
+   * Hvad der er værd at slå op for et skilt.
+   *
+   * Et skilt fra kortet er en knude i kortet, og id'et fører hen til den. Et medbragt skilt er ikke:
+   * Sveriges id er regnet ud af vejknuden og Norges er NVDB's objektnummer, og begge to rammer en
+   * tilfældig anden knude — id 14020852720 ved Lerbäckshult førte til et punkt i Amazonas. Så viser
+   * det id'et som det er og linker til stedet i stedet, hvilket altid er sandt.
+   *
+   * Pakker lagt op før indekset sagde det fra har ingen signIds, og de får stedet. Et link der er
+   * mindre righoldigt er bedre end et der er forkert.
+   */
+  function signLink(sign) {
+    if (pack.region && pack.region.signIds === 'osm') return osmLink(sign.id);
+    return escapeHtml(String(sign.id)) + ' · ' + spotLink(sign.position);
+  }
+
+  function spotLink(position) {
+    var lat = position.lat.toFixed(5);
+    var lng = position.lng.toFixed(5);
+    return '<a href="https://www.openstreetmap.org/#map=19/' + lat + '/' + lng +
+      '" target="_blank" rel="noreferrer">' + lat + ', ' + lng + '</a>';
+  }
+
   function render() {
     signLayer.clearLayers();
 
@@ -971,7 +994,7 @@
           ' (' + Math.round(C.distance(sign.position, sign.place.position)) + ' m' +
           (sign.place.isArea ? ', arealmidte' : '') + ')' : '') +
         (sign.genericBoundary ? '<br><span class="muted">Generisk byzonenode (indkørsel den ene vej, ophør den anden)</span>' : '') +
-        '<br>' + osmLink(sign.id) + (sign.tags ? tagTable(sign.tags) : '')
+        '<br>' + signLink(sign) + (sign.tags ? tagTable(sign.tags) : '')
       ).addTo(signLayer);
 
       if (known) {
@@ -996,7 +1019,7 @@
       L.circleMarker([sign.position.lat, sign.position.lng], {
         radius: 6, color: '#fff', weight: 2, fillColor: '#9e9e9e', fillOpacity: 1
       }).bindPopup('<b>' + escapeHtml(sign.name || '(uden navn)') + '</b><br>' +
-        'Kasseret: kun skilt med streg over<br>' + osmLink(sign.id) + tagTable(sign.tags)).addTo(signLayer);
+        'Kasseret: kun skilt med streg over<br>' + signLink(sign) + tagTable(sign.tags)).addTo(signLayer);
     });
 
     var unknown = data.signs.filter(function (sign) {

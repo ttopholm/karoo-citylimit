@@ -535,6 +535,11 @@ async function build(region, generatedAt) {
     id: region.id,
     name: region.name,
     ...(region.credit ? { credit: region.credit } : {}),
+    // What a sign's id is. A sign read from the map is a node of the map and can be looked up; a
+    // sign a region brought with it is not - Norway's id is NVDB's object number and Sweden's is
+    // worked out from the road node - and looking one of those up finds an unrelated node on the
+    // other side of the world. The verification map asks before it makes a link of it.
+    signIds: region.signs ? 'source' : 'osm',
     generatedAt,
     signs: withDirection.length,
     signsWithRoad: withRoad,
