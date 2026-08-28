@@ -27,6 +27,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { collectFromDump } from './osm-dump.mjs';
 import { fetchNorwegianSigns, ATTRIBUTION as NVDB_ATTRIBUTION } from './nvdb-signs.mjs';
+import { fetchSwedishBoundaries, ATTRIBUTION as SE_ATTRIBUTION } from './nvdb-sweden.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 vm.runInThisContext(
@@ -112,6 +113,21 @@ const REGIONS = [
     ],
     signs: fetchNorwegianSigns,
     credit: NVDB_ATTRIBUTION,
+  },
+  {
+    // Sweden's signs are not in the map either - of the 492 town signs the extract carries, 164
+    // stand more than a kilometre from any built-up area and are plain place-name signs, mapped
+    // under the same tag. What is public instead is
+    // the boundary itself: every municipality's built-up area, recorded against the road network in
+    // NVDB, from which the crossings are worked out.
+    id: 'se',
+    name: 'Sverige',
+    dump: [
+      'https://download.geofabrik.de/europe/sweden-latest.osm.pbf',
+      'https://download.openstreetmap.fr/extracts/europe/sweden.osm.pbf',
+    ],
+    signs: fetchSwedishBoundaries,
+    credit: SE_ATTRIBUTION,
   },
   {
     id: 'fr',

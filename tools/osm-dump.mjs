@@ -64,8 +64,11 @@ export async function collectFromDump(region, workDir, logic, log = console.log)
   // A country whose signs are not in OpenStreetMap brings its own. They are placed on the road
   // network here rather than being nodes of it, so each is tied to the nearest road node - which
   // is what the road bearing and the speed zone are read from - while keeping its own position.
-  const brought = region.signs ? await region.signs(log) : [];
-  const broughtNear = signLookup(brought);
+  const brought = region.signs ? await region.signs({ roadsPbf, workDir, log }) : [];
+  // A sign that already knows its road node needs no snapping: Sweden's boundaries are found on the
+  // road network itself, so the node is where they come from rather than something to look up.
+  const loose = brought.filter((sign) => sign.roadNode == null);
+  const broughtNear = signLookup(loose);
   const nearest = new Map();
   let placed = false;
 
@@ -103,17 +106,20 @@ export async function collectFromDump(region, workDir, logic, log = console.log)
     if (brought.length > 0 && !placed) {
       placed = true;
       for (const sign of brought) {
-        const match = nearest.get(sign.id);
-        if (!match) continue;
+        const node = sign.roadNode ?? nearest.get(sign.id)?.node;
+        if (node == null) continue;
         signs.push({
           type: 'node',
           id: sign.id,
           lat: sign.lat,
           lon: sign.lon,
-          roadNode: match.node,
+          roadNode: node,
+          // A boundary read off the road already says which way is into town; a sign photographed
+          // beside the road does not, and has it worked out from the town and the speed zone.
+          entryHeading: sign.entryHeading,
           tags: { name: sign.name, traffic_sign: 'city_limit' },
         });
-        signIds.add(match.node);
+        signIds.add(node);
       }
       log(`  ${signs.length} af ${brought.length} medbragte skilte fandt en vej`);
     }
@@ -213,7 +219,7 @@ const DOWNLOAD_TIMEOUT_MS = 20 * 60_000;
  * build that stops because one host will not answer is a build that does not run: the first attempt
  * from a GitHub runner never got a connection to it at all.
  */
-async function download(mirrors, target, log) {
+export async function download(mirrors, target, log) {
   const urls = [mirrors].flat().filter(Boolean);
   if (urls.length === 0) throw new Error('Regionen har ingen dump-adresse');
   if (fs.existsSync(target) && fs.statSync(target).size > 0) {

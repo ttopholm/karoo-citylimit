@@ -55,9 +55,9 @@ class OverpassTest {
     }
 
     @Test
-    fun `unnamed sign falls back to the nearest place`() {
+    fun `unnamed sign takes its name from the place it belongs to`() {
         val sign = Overpass.parseSigns(response).first { it.id == 6371351384L }
-        // No name on the sign itself, so the nearest place supplies both the name and the direction.
+        // No name on the sign itself, so the place it lies inside supplies the name and the direction.
         assertEquals("Nørre Herlev", sign.name)
         assertEquals(10292867727L, sign.townId)
         assertNotNull(sign.entryHeading)
@@ -223,15 +223,31 @@ class OverpassTest {
         assertTrue(Overpass.parseSigns(body).isEmpty())
     }
 
+    /*
+     * A sign with no name belongs to the town it lies deepest inside, not to whatever is nearest.
+     * A town's boundary is kilometres from its centre, and the nearest mapped place out there is
+     * usually an outlying farm.
+     */
     @Test
-    fun `a mapped node beats an area centre for an unnamed sign`() {
+    fun `a town outreaches a hamlet nearer by for an unnamed sign`() {
+        val places = listOf(
+            PlaceNode(1, LatLng(55.8865000, 12.2800000), "Købstad", "town", isArea = false),
+            PlaceNode(2, LatLng(55.8973000, 12.2800000), "Udflyttergård", "hamlet", isArea = false),
+        )
+        // The hamlet is 300 m away and the town 1.5 km, and the sign still belongs to the town.
+        assertEquals(1L, Overpass.matchPlace(LatLng(55.9000000, 12.2800000), null, places)?.id)
+        // Standing on the hamlet, though, the hamlet is the answer.
+        assertEquals(2L, Overpass.matchPlace(LatLng(55.8974000, 12.2800000), null, places)?.id)
+    }
+
+    @Test
+    fun `an area centre is a town like any other`() {
         val signPosition = LatLng(55.9000000, 12.2800000)
         val places = listOf(
-            PlaceNode(1, LatLng(55.8960000, 12.2800000), "Nodeby", "village", isArea = false),
-            PlaceNode(2, LatLng(55.8990000, 12.2800000), "Arealby", "suburb", isArea = true),
+            PlaceNode(1, LatLng(55.8960000, 12.2800000), "Nodeby", "hamlet", isArea = false),
+            PlaceNode(2, LatLng(55.8990000, 12.2800000), "Arealby", "town", isArea = true),
         )
-        // The area centre is closer, but a node sits at the real town centre.
-        assertEquals(1L, Overpass.matchPlace(signPosition, null, places)?.id)
+        assertEquals(2L, Overpass.matchPlace(signPosition, null, places)?.id)
     }
 
     @Test

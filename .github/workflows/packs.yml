@@ -68,8 +68,10 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install osmium
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+      # gdal is for Sweden alone: its boundaries come as a GeoPackage from the road authority, and
+      # ogr2ogr is what reads one.
+      - name: Install osmium and gdal
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool gdal-bin
 
       # Germany is five gigabytes of dump and another one and a half of roads filtered out of it,
       # and France is the same again. The runner ships with several gigabytes of toolchains this

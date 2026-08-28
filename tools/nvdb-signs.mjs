@@ -46,7 +46,7 @@ const headers = {
  * The tag is what a Danish sign would carry, so the same classification applies: a boundary that is
  * an entry one way and an exit the other. Which way is which is settled later, from the road.
  */
-export async function fetchNorwegianSigns(log = console.log) {
+export async function fetchNorwegianSigns({ log = console.log } = {}) {
   const filter = PLACE_NAME_PLATES.map((value) => `${SIGN_NUMBER}=${value}`).join(' OR ');
   const query = new URLSearchParams({
     egenskap: `(${filter})`,
@@ -116,6 +116,6 @@ async function ask(url, log) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const signs = await fetchNorwegianSigns((line) => process.stderr.write(`${line}\n`));
+  const signs = await fetchNorwegianSigns({ log: (line) => process.stderr.write(`${line}\n`) });
   process.stdout.write(`${JSON.stringify(signs)}\n`);
 }
