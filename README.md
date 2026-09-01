@@ -308,7 +308,7 @@ straight into the sign cache:
 | | signs | cells | files | size |
 | --- | ---: | ---: | ---: | ---: |
 | Germany | 114,828 | 8,985 | 240 | 17.9 MB |
-| Sweden | 42,938 | 2,836 | 90 | 6.6 MB |
+| Sweden | 42,938 | 2,821 | 91 | 6.7 MB |
 | France | 41,472 | 7,066 | 86 | 6.5 MB |
 | Poland | 15,013 | 3,150 | 30 | 2.2 MB |
 | Netherlands | 14,917 | 1,047 | 30 | 2.2 MB |
@@ -518,10 +518,17 @@ whether you downloaded the country. This is a bug, not a design.
 
 **Sweden is not good enough to sprint to.** Its points are not signs: they are where a road crosses
 the built-up area the municipality decided on, which is where a sign is *supposed* to stand. Held
-against the 344 mapped signs that do sit at a built-up area, one lands within 50 m of 56% of them,
-within 100 m of 73% and within 200 m of 82%. On a 200 m warning an error of 150 m is the difference
+against the 344 mapped signs that do sit at a built-up area, one lands within 25 m of 38% of them,
+within 50 m of 60% and within 100 m of 72%. On a 200 m warning an error of 150 m is the difference
 between winding up early and being at the line already. Fine for knowing a town is coming; not fine
-for a sprint. Norway is a different exception: its points are real signs with surveyed positions,
+for a sprint.
+
+That is after moving each boundary onto the point where the linework itself stops, which took the
+systematic part out: the grid answers "within eleven to sixteen metres of an urban road", so the
+point it found always sat about twenty metres too far out. 34,210 of 42,938 moved, by twenty metres
+on average, and the near band improved by five points. What is left is not systematic — the mapped
+signs scatter about seventy metres either side of the decided boundary — so no amount of arithmetic
+on this dataset closes it. It would take a source that records where the signs actually stand. Norway is a different exception: its points are real signs with surveyed positions,
 they are just the white place-name signs rather than a town-entry sign, which Norway no longer has.
 
 **A sign with no mapped town is dropped.** Without a town there is no name to announce and no way to
