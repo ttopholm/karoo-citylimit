@@ -34,7 +34,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
-import { download } from './osm-dump.mjs';
+import { download, forbiddenToCycle } from './osm-dump.mjs';
 
 /** The ordered extract, published as an asset on the packs release. */
 const PACKAGE =
@@ -56,25 +56,6 @@ const LON_STEP = 0.0002;
 
 /** The roads a town sign is put up on. A footpath crossing the boundary carries no sign. */
 const RIDEABLE = /^(trunk|primary|secondary|tertiary|unclassified|residential|living_street)(_link)?$/;
-
-/*
- * A road nobody may cycle on has no sign worth carrying.
- *
- * The boundary is found on the map's roads, and a motorway crosses it like anything else: 3,092 of
- * Sweden's 46,331 crossings stood on one. They can never be reached lawfully, and they are not
- * merely wasted - the alert does not require the rider to be *on* the sign's road, only within two
- * hundred metres of it, ahead of it, and pointing the same way. A slip road running alongside the
- * road actually being ridden satisfies all three.
- *
- * motorroad=yes is the same prohibition without the motorway class, so it goes too.
- *
- * bicycle=no stays. On an ordinary road it usually means the cycle track beside it is where you
- * belong, and the sign is still the sign you ride past. A false alert from one needs a rider within
- * two hundred metres pointing the same way, which is very nearly a description of that cycle track.
- */
-function forbiddenToCycle(tags) {
-  return /^motorway/.test(tags.highway) || tags.motorroad === 'yes';
-}
 
 /** How finely the boundary is pinned down between the two nodes it falls between. */
 const BISECTIONS = 12;
