@@ -185,7 +185,7 @@ What is built today:
 | | signs | what a point is | source | licence |
 | --- | ---: | --- | --- | --- |
 | Germany | 114,828 | the mapped sign | OpenStreetMap | ODbL |
-| Sweden | 42,938 | **the decided boundary, not the sign** | Trafikverket NVDB, via Lastkajen | CC0 |
+| Sweden | 43,078 | **the decided boundary**, or the mapped sign where there is one | Trafikverket NVDB + OpenStreetMap | CC0 + ODbL |
 | France | 41,472 | the mapped sign | OpenStreetMap | ODbL |
 | Poland | 15,013 | the mapped sign | OpenStreetMap | ODbL |
 | Netherlands | 14,917 | the mapped sign | OpenStreetMap | ODbL |
@@ -308,7 +308,7 @@ straight into the sign cache:
 | | signs | cells | files | size |
 | --- | ---: | ---: | ---: | ---: |
 | Germany | 114,828 | 8,985 | 240 | 17.9 MB |
-| Sweden | 42,938 | 2,821 | 91 | 6.7 MB |
+| Sweden | 43,078 | 2,880 | 92 | 6.8 MB |
 | France | 41,472 | 7,066 | 86 | 6.5 MB |
 | Poland | 15,013 | 3,150 | 30 | 2.2 MB |
 | Netherlands | 14,917 | 1,047 | 30 | 2.2 MB |
@@ -544,8 +544,23 @@ themselves, and Sweden has none: NVDB's open API offers twelve datasets and none
 its catalogue of some forty feature types has no sign positions, and Swedish road signs sit with the
 municipalities rather than with Trafikverket. Mapillary detects signs from street imagery, but its
 grant covers deriving metadata *for contributing to OpenStreetMap*, not republishing a pack. Which
-leaves the map itself: 492 Swedish town signs are mapped today, and every one that gets added is a
-point this pack could take at its word.
+leaves the map itself: 492 Swedish town signs are mapped today, and the pack now takes every one of
+them at its word.
+
+**A mapped sign beats a computed boundary.** Where somebody has stood in front of the sign and put a
+node there, that node is the point — the map knows where the sign *is*, the boundary only where it
+ought to be. What the boundary keeps is the direction, because Sweden reads that off the road
+network and measured beats derived. 311 boundaries gave way to a mapped sign at the same entrance,
+449 mapped signs went into the pack, and the rest of the country is unchanged. That is about one
+per cent today. The point is that it grows on its own: every Swedish sign anyone maps is one more
+the pack no longer has to guess at.
+
+> **This broke the yardstick, and the broken number is the flattering one.** The mapped signs were
+> what the accuracy above was measured against, and they are now in the pack, so measuring again
+> scores them against themselves: 93% within ten metres, which means nothing. Removing them from the
+> tally does not help either — the 311 boundaries nearest them are exactly the ones that gave way, so
+> that reads 0%. **The 38 / 60 / 72 above is from a build with this step turned off, and that is how
+> it has to be measured from now on.**
 
 (Six mapped signs sit exactly 0 m from a boundary point. That is too exact to be independent —
 parts of Sweden's OSM road network were imported from NVDB, so a sign node that is a vertex of such
