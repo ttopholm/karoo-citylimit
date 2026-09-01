@@ -1,19 +1,27 @@
 # karoo-citylimit
 
-A [Hammerhead Karoo](https://www.hammerhead.io/) extension that alerts you when you are about to
-ride **into** a town — and stays quiet when you ride out of one.
+**For the town sign sprint.** A [Hammerhead Karoo](https://www.hammerhead.io/) extension that tells
+you a town-entry sign is coming while there is still time to get out of the saddle — and says
+nothing on the way out, because that sign is not a sprint.
 
-> **På dansk:** Udvidelsen giver en besked på Karoo'en når du nærmer dig et byskilt ved indkørsel
-> til en by. Byskilte med streg over (ophør af tættere bebygget område) giver aldrig besked.
+On roads you know, you know where the sign is. On roads you do not, whoever does wins. That is the
+whole of it.
+
+> **På dansk:** Byskiltespurt. Udvidelsen siger til på Karoo'en et par hundrede meter før byskiltet,
+> så du ved hvornår spurten går. Skiltet med streg over — ophør af tættere bebygget område — giver
+> aldrig besked, for der er ingen spurt ud af byen.
 
 ![alert](docs/alert.svg)
 
 ## What it does
 
 * Watches your position while you ride and shows an in-ride alert (optionally with a beep) roughly
-  200 m before a town-entry sign.
+  200 m before a town-entry sign — far enough out to wind it up, close enough to be about this sign.
 * Only the **entry** side of a town boundary is announced. The crossed-out sign you pass on the way
   out is ignored.
+* Where a sign is placed matters as much as whether it is there. A sprint is decided at a line you
+  can see, so a pack built from mapped sign nodes is worth more than one built from a boundary that
+  is merely where a sign ought to stand. Which countries are which is set out below.
 * Works offline once the area has been downloaded, and can prefetch every town along a loaded route.
 
 ## How "entry only" is decided
@@ -174,16 +182,21 @@ broken feature rather than an absent one.
 
 What is built today:
 
-| | signs | source | licence |
-| --- | ---: | --- | --- |
-| Germany | 114,828 | OpenStreetMap | ODbL |
-| Sweden | 42,938 | Trafikverket NVDB, via Lastkajen | CC0 |
-| France | 41,472 | OpenStreetMap | ODbL |
-| Poland | 15,013 | OpenStreetMap | ODbL |
-| Netherlands | 14,917 | OpenStreetMap | ODbL |
-| Austria | 14,300 | OpenStreetMap | ODbL |
-| Denmark | 8,635 | OpenStreetMap | ODbL |
-| Norway | 6,852 | Statens vegvesen NVDB, open API | NLOD |
+| | signs | what a point is | source | licence |
+| --- | ---: | --- | --- | --- |
+| Germany | 114,828 | the mapped sign | OpenStreetMap | ODbL |
+| Sweden | 43,078 | **the decided boundary**, or the mapped sign where there is one | Trafikverket NVDB + OpenStreetMap | CC0 + ODbL |
+| France | 41,472 | the mapped sign | OpenStreetMap | ODbL |
+| Poland | 15,013 | the mapped sign | OpenStreetMap | ODbL |
+| Netherlands | 14,917 | the mapped sign | OpenStreetMap | ODbL |
+| Austria | 14,300 | the mapped sign | OpenStreetMap | ODbL |
+| Denmark | 8,635 | the mapped sign | OpenStreetMap | ODbL |
+| Norway | 6,852 | a surveyed place-name sign | Statens vegvesen NVDB, open API | NLOD |
+
+The middle column is the one that decides whether a sprint is worth having. Six of the eight are the
+sign itself, put there by somebody who stood in front of it. Norway's are real signs too, just not
+town-entry ones. **Sweden's are not signs at all**, and the [limitations](#limitations) say what that
+costs.
 
 Italy and Czechia are the next map-backed candidates.
 
@@ -295,7 +308,7 @@ straight into the sign cache:
 | | signs | cells | files | size |
 | --- | ---: | ---: | ---: | ---: |
 | Germany | 114,828 | 8,985 | 240 | 17.9 MB |
-| Sweden | 42,938 | 2,836 | 90 | 6.6 MB |
+| Sweden | 43,078 | 2,880 | 92 | 6.8 MB |
 | France | 41,472 | 7,066 | 86 | 6.5 MB |
 | Poland | 15,013 | 3,150 | 30 | 2.2 MB |
 | Netherlands | 14,917 | 1,047 | 30 | 2.2 MB |
@@ -493,11 +506,91 @@ config in `app/build.gradle.kts` if you need a different one.
 
 ## Limitations
 
-* Alerts depend on how well town boundaries are mapped in OpenStreetMap. A sampling of one ~11 × 13
-  km area per country found signs in DK, DE, NL, AT, IT, BE, CZ, PL, ES, FI, UK and US — around 300
-  signs, all of which resolved a direction — but none at all in the sampled areas of SE, NO, FR and
-  CH, where nobody has mapped the boundaries. Check your own area on the verification map before
-  relying on it.
-* `direction=forward/backward` on a sign node is relative to the way it sits on, which needs road
-  geometry that would blow past the size limit for in-ride requests. The town-centre bearing is
-  used instead — it agrees with the tagging in the areas this has been checked against.
+**Outside the eight countries with a pack, coverage is whatever OpenStreetMap has.** Riding an
+unbuilt country falls back to fetching cells from Overpass as you go, and how much is mapped varies
+enormously — Germany has 130,000 signs and Britain 967. Check your own area on the verification map
+before relying on it.
+
+**A pack and a live-fetched cell do not behave the same.** A pack carries only signs whose direction
+into town is known; the live path keeps the undecided ones too, and *Also alert when direction is
+unknown* then fires them in both directions. So the same road can behave differently depending on
+whether you downloaded the country. This is a bug, not a design.
+
+**Sweden is not good enough to sprint to.** Its points are not signs: they are where a road crosses
+the built-up area the municipality decided on, which is where a sign is *supposed* to stand. Held
+against the 344 mapped signs that do sit at a built-up area, one lands within 25 m of 38% of them,
+within 50 m of 60% and within 100 m of 72%. On a 200 m warning an error of 150 m is the difference
+between winding up early and being at the line already. Fine for knowing a town is coming; not fine
+for a sprint.
+
+That is after moving each boundary onto the point where the linework itself stops, which took the
+systematic part out: the grid answers "within eleven to sixteen metres of an urban road", so the
+point it found always sat about twenty metres too far out. 34,210 of 42,938 moved, by twenty metres
+on average, and the near band improved by five points.
+
+**The assumption underneath is sound, and worth stating with its evidence.** A sign is supposed to
+stand where the built-up area begins, and Sweden's mapped signs do: held against the 48,400 places
+where a stretch of urban road is cut mid-link — the boundary as NVDB states it, with no grid and no
+guessing — the median mapped sign is 31 m away and 61% are within 50 m. A point drawn at random from
+the same urban road network is 255 m from one, and 9% are within 50 m. So the signs cluster on the
+boundary far beyond chance. Individually: Mariestad, Torbjörntorp, Floby, Åsenhöga and Ljungbyhed
+all sit 29-30 m from theirs.
+
+**And that is also the ceiling.** The pack reaches 60% within 50 m; the raw boundary points reach
+61%. There is less than a point between the implementation and the best this data can do, so the
+40% that misses is not arithmetic left undone — it is the real scatter in where a sign was put up
+relative to where the municipality drew the line. Closing it needs a source that records the signs
+themselves, and Sweden has none: NVDB's open API offers twelve datasets and none of them is signs,
+its catalogue of some forty feature types has no sign positions, and Swedish road signs sit with the
+municipalities rather than with Trafikverket. Mapillary detects signs from street imagery, but its
+grant covers deriving metadata *for contributing to OpenStreetMap*, not republishing a pack. Which
+leaves the map itself: 492 Swedish town signs are mapped today, and the pack now takes every one of
+them at its word.
+
+**A mapped sign beats a computed boundary.** Where somebody has stood in front of the sign and put a
+node there, that node is the point — the map knows where the sign *is*, the boundary only where it
+ought to be. What the boundary keeps is the direction, because Sweden reads that off the road
+network and measured beats derived. 311 boundaries gave way to a mapped sign at the same entrance,
+449 mapped signs went into the pack, and the rest of the country is unchanged. That is about one
+per cent today. The point is that it grows on its own: every Swedish sign anyone maps is one more
+the pack no longer has to guess at.
+
+> **This broke the yardstick, and the broken number is the flattering one.** The mapped signs were
+> what the accuracy above was measured against, and they are now in the pack, so measuring again
+> scores them against themselves: 93% within ten metres, which means nothing. Removing them from the
+> tally does not help either — the 311 boundaries nearest them are exactly the ones that gave way, so
+> that reads 0%. **The 38 / 60 / 72 above is from a build with this step turned off, and that is how
+> it has to be measured from now on.**
+
+(Six mapped signs sit exactly 0 m from a boundary point. That is too exact to be independent —
+parts of Sweden's OSM road network were imported from NVDB, so a sign node that is a vertex of such
+a way shares its coordinate by descent rather than by agreement. They are not counted as
+confirmation above.)
+
+**Norway is a different exception.** Its points are real signs with surveyed positions — they are
+just the white place-name signs rather than a town-entry sign, which Norway no longer has.
+
+**A sign with no mapped town is dropped.** Without a town there is no name to announce and no way to
+tell entry from exit, so it is left out rather than guessed at. That is why the 44 Danish signs
+reading *Storkøbenhavn* are absent: no `place` in OpenStreetMap carries that name.
+
+**All eight packs do not fit at once.** The sign cache holds 20,000 cells and the eight countries
+are 28,653 between them, so installing everything pushes the oldest cells off the end without saying
+so. Two or three countries fit comfortably.
+
+**`direction=forward/backward` on a sign node is not read.** It is relative to the way the node sits
+on, which needs road geometry — free when a whole country is read from a dump, far past the size
+limit for a request from the saddle. Packs settle the direction from the road and the speed zone
+instead; live-fetched cells take the bearing towards the town centre.
+
+## Licence
+
+The code is [MIT](LICENSE). The data is not the author's to license:
+
+* Sign data from OpenStreetMap is © OpenStreetMap contributors, under the
+  [Open Database License](https://www.openstreetmap.org/copyright).
+* The Norwegian pack contains data under the [Norwegian Licence for Public
+  Data](https://www.nvdb.no/rammer-regelverk/vilkar-og-ansvar/vilkar-for-bruk-av-data/) from Statens
+  vegvesen, which asks to be named; the pack carries that line and the settings screen shows it.
+* The Swedish pack is built from *Tättbebyggt område* from Trafikverket's NVDB, which is
+  [CC0](https://creativecommons.org/publicdomain/zero/1.0/).

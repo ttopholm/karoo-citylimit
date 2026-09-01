@@ -32,16 +32,39 @@ const SIGN_KEYS = 'n/traffic_sign*';
 const SIGN_KEY = /^traffic_sign(:(forward|backward|both))?$/;
 
 /**
+ * A road nobody may cycle on.
+ *
+ * This was written for Sweden, where the boundary is found on the road network and a motorway
+ * crosses it like anything else. It turned out to be needed everywhere: Denmark has 59 town signs
+ * standing on a motorway, a slip road or an expressway, and 26 of them were in the published pack -
+ * Odense, Roskilde, Korsør, Aalborg, each signed at the exit a rider cannot take. The 29 signs
+ * reading "Storkøbenhavn" are the clearest case: all but a handful stand on a motorway ramp, which
+ * is what that sign is for.
+ *
+ * They are not merely wasted. The alert does not require the rider to be *on* the sign's road, only
+ * within two hundred metres of it, ahead of it, and pointing the same way, and a slip road running
+ * alongside the road actually being ridden satisfies all three.
+ *
+ * motorroad=yes is the same prohibition without the motorway class, so it goes too. bicycle=no
+ * stays: on an ordinary road it usually means the cycle track beside it is where you belong, and the
+ * sign is still the sign you ride past.
+ */
+export function forbiddenToCycle(tags) {
+  return /^motorway/.test(tags.highway || '') || tags.motorroad === 'yes';
+}
+
+/**
  * Reads the dump for a region and returns what collect() would have returned from Overpass.
  *
  * @param region a REGIONS entry, needing a `dump` URL
  * @param workDir where the dump and the files osmium writes are kept
- * @param logic the shared logic block: `isSign` tells a town sign from any other traffic sign -
+ * @param logic the shared logic block: `isSign` tells a town sign from any other traffic sign, and
+ *   `isEntry` whether it announces an entry rather than only the crossed-out variant -
  *   osmium can filter on the key but not on the value, and in Germany every stop sign carries that
  *   key too - and `speedZone` settles a road's zone while it is read, so its tags can be let go
  */
 export async function collectFromDump(region, workDir, logic, log = console.log) {
-  const { isSign, speedZone } = logic;
+  const { isSign, isEntry, speedZone } = logic;
   fs.mkdirSync(workDir, { recursive: true });
   const file = (name) => path.join(workDir, `${region.id}-${name}`);
 
@@ -79,17 +102,17 @@ export async function collectFromDump(region, workDir, logic, log = console.log)
   const roads = new Map();
   await eachRoadLine(roadsPbf, log, (line) => {
     if (line.charCodeAt(0) === 110 /* n */) {
-      const node = readNode(line, brought.length === 0);
-      if (brought.length > 0) {
+      const node = readNode(line);
+      if (!node) return;
+      if (loose.length > 0) {
         for (const sign of broughtNear(node)) {
           const metres = haversine(sign, node);
           if (metres > MAX_SNAP_METERS) continue;
           const best = nearest.get(sign.id);
           if (!best || metres < best.metres) nearest.set(sign.id, { node: node.id, metres });
         }
-        return;
       }
-      if (!node || !Object.keys(node.tags).some((key) => SIGN_KEY.test(key))) return;
+      if (!Object.keys(node.tags).some((key) => SIGN_KEY.test(key))) return;
       // Germany tags 381,059 nodes with traffic_sign and only 130,000 of them mark a town. Taking
       // the rest along means every road they stand on and every road meeting those, which is where
       // the build ran out of memory.
@@ -105,9 +128,28 @@ export async function collectFromDump(region, workDir, logic, log = console.log)
     // Every node is read before the first way, so this is where the brought signs know their road.
     if (brought.length > 0 && !placed) {
       placed = true;
+      // A sign somebody mapped beats one this build worked out. The map knows where the sign
+      // stands - it is a thing a person saw - and a brought sign only knows where it ought to be.
+      // What the brought one keeps is the direction: Sweden reads that off the road network, and
+      // measured beats derived. Where the two describe the same entrance, only the mapped one goes
+      // on, wearing the direction the boundary brought.
+      const mappedNear = signLookup(signs);
+      let superseded = 0;
       for (const sign of brought) {
         const node = sign.roadNode ?? nearest.get(sign.id)?.node;
         if (node == null) continue;
+        // Only a mapped sign that announces an entry may take a boundary's place. One that is only
+        // the crossed-out variant is dropped later, and would take the entrance down with it.
+        const mapped = mappedNear(sign)
+          .filter((one) => haversine(sign, one) <= SAME_ENTRANCE_METERS && isEntry(one.tags))
+          .sort((a, b) => haversine(sign, a) - haversine(sign, b))[0];
+        if (mapped) {
+          if (mapped.entryHeading == null && sign.entryHeading != null) {
+            mapped.entryHeading = sign.entryHeading;
+          }
+          superseded++;
+          continue;
+        }
         signs.push({
           type: 'node',
           id: sign.id,
@@ -121,16 +163,44 @@ export async function collectFromDump(region, workDir, logic, log = console.log)
         });
         signIds.add(node);
       }
-      log(`  ${signs.length} af ${brought.length} medbragte skilte fandt en vej`);
+      if (superseded > 0) {
+        log(`  ${superseded} medbragte skilte veg for et kortlagt skilt samme sted`);
+      }
+      log(`  ${signs.length} skilte i alt efter de medbragte`);
     }
     const way = readWay(line);
     if (!way?.tags.highway) return;
     if (!way.nodes.some((node) => signIds.has(node))) return;
     // Only the zone is wanted from the tags, and 200,000 sets of German road tags is more memory
     // than there is. Settle it here and let the rest go.
-    roads.set(way.id, { id: way.id, nodes: way.nodes, zone: speedZone(way.tags) });
+    roads.set(way.id, {
+      id: way.id,
+      nodes: way.nodes,
+      zone: speedZone(way.tags),
+      forbidden: forbiddenToCycle(way.tags),
+    });
   });
   log(`  ${signs.length} skiltenoder på ${roads.size} veje`);
+
+  // A sign standing only on roads nobody may cycle on is dropped, now that the roads are known. A
+  // sign where a slip road meets an ordinary one keeps its place: one of its roads is rideable.
+  const roadsAtNode = new Map();
+  for (const road of roads.values()) {
+    for (const node of road.nodes) {
+      let list = roadsAtNode.get(node);
+      if (!list) roadsAtNode.set(node, list = []);
+      list.push(road);
+    }
+  }
+  const rideable = signs.filter((sign) => {
+    const here = roadsAtNode.get(sign.roadNode ?? sign.id);
+    return !here || here.length === 0 || here.some((road) => !road.forbidden);
+  });
+  if (rideable.length < signs.length) {
+    log(`  ${signs.length - rideable.length} skilte står kun på veje man ikke må cykle på og er udeladt`);
+    signs.length = 0;
+    signs.push(...rideable);
+  }
 
   // Now the roads are known, a second pass picks up the coordinates they are drawn from and the
   // roads that meet their ends - the neighbours the speed zone is read from.
@@ -172,6 +242,15 @@ export async function collectFromDump(region, workDir, logic, log = console.log)
 
 /** How far a brought sign may be from a road node before it is taken to belong to no road. */
 const MAX_SNAP_METERS = 60;
+
+/*
+ * How close a mapped sign has to be before it and a brought one are the same entrance.
+ *
+ * Sweden's mapped signs sit a median of 31 m from the boundary the build works out, 61% within
+ * fifty metres and 72% within a hundred. A hundred keeps most of the pairs without reaching across
+ * to the next road in.
+ */
+const SAME_ENTRANCE_METERS = 100;
 
 /* Signs in a grid, so a node asks about the few near it rather than all eleven thousand. */
 function signLookup(signs) {

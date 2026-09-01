@@ -34,7 +34,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
-import { download } from './osm-dump.mjs';
+import { download, forbiddenToCycle } from './osm-dump.mjs';
 
 /** The ordered extract, published as an asset on the packs release. */
 const PACKAGE =
@@ -57,27 +57,19 @@ const LON_STEP = 0.0002;
 /** The roads a town sign is put up on. A footpath crossing the boundary carries no sign. */
 const RIDEABLE = /^(trunk|primary|secondary|tertiary|unclassified|residential|living_street)(_link)?$/;
 
-/*
- * A road nobody may cycle on has no sign worth carrying.
- *
- * The boundary is found on the map's roads, and a motorway crosses it like anything else: 3,092 of
- * Sweden's 46,331 crossings stood on one. They can never be reached lawfully, and they are not
- * merely wasted - the alert does not require the rider to be *on* the sign's road, only within two
- * hundred metres of it, ahead of it, and pointing the same way. A slip road running alongside the
- * road actually being ridden satisfies all three.
- *
- * motorroad=yes is the same prohibition without the motorway class, so it goes too.
- *
- * bicycle=no stays. On an ordinary road it usually means the cycle track beside it is where you
- * belong, and the sign is still the sign you ride past. A false alert from one needs a rider within
- * two hundred metres pointing the same way, which is very nearly a description of that cycle track.
- */
-function forbiddenToCycle(tags) {
-  return /^motorway/.test(tags.highway) || tags.motorroad === 'yes';
-}
-
 /** How finely the boundary is pinned down between the two nodes it falls between. */
 const BISECTIONS = 12;
+
+/*
+ * How far a boundary may be moved onto the point where the built-up area actually stops.
+ *
+ * The grid answers "within eleven to sixteen metres of an urban road", so the point the halving
+ * finds sits that far outside where the linework really ends - measured against the map's own signs,
+ * a median of twenty metres out, and never nearer than ten. The linework's own end is a coordinate
+ * NVDB states outright, with no grid and no halving in the way, so the boundary is moved there when
+ * one is close by. Forty metres is well past the bias and well short of the road next door.
+ */
+const SNAP_METERS = 40;
 
 /*
  * Room in the identifier for the boundaries that share a road node.
@@ -104,7 +96,7 @@ export async function fetchSwedishBoundaries({ roadsPbf, workDir, log = console.
   await download(PACKAGE, geopackage, log);
   if (!fs.existsSync(linework)) await toLinework(geopackage, linework, log);
 
-  const inZone = await readZone(linework, log);
+  const { inZone, terminus } = await readZone(linework, log);
 
   // The nodes come before the ways, so each node is answered as it is read and the ways can be
   // measured on the spot.
@@ -162,7 +154,7 @@ export async function fetchSwedishBoundaries({ roadsPbf, workDir, log = console.
     const outside = at.get(crossing.outside);
     const inside = at.get(crossing.inside);
     if (!outside || !inside) { lost++; continue; }
-    const point = boundaryBetween(outside, inside, inZone);
+    const point = terminus(boundaryBetween(outside, inside, inZone));
     // A road forking just outside town crosses the boundary twice from the same node, and two signs
     // with one id are one sign by the time the pack is written.
     const nth = perNode.get(crossing.outside) ?? 0;
@@ -208,6 +200,14 @@ function boundaryBetween(outside, inside, inZone) {
  */
 async function readZone(csv, log) {
   const bands = new Map();
+  // Where a stretch of urban road begins and ends, and how many stretches meet there. A point only
+  // one of them touches is where the built-up area stops - the boundary itself, as NVDB states it.
+  const meeting = new Map();
+  const note = (point) => {
+    const key = `${point.lon.toFixed(7)},${point.lat.toFixed(7)}`;
+    const seen = meeting.get(key);
+    if (seen) seen.times++; else meeting.set(key, { times: 1, lat: point.lat, lon: point.lon });
+  };
   const mark = (lat, lon) => {
     const band = Math.round(lat / LAT_STEP);
     let list = bands.get(band);
@@ -224,7 +224,10 @@ async function readZone(csv, log) {
     const close = line.indexOf(')');
     if (open < 0 || close < 0) continue;
     let previous = null;
-    for (const raw of line.slice(open + 1, close).split(',')) {
+    const drawn = line.slice(open + 1, close).split(',');
+    note(readPoint(drawn[0]));
+    note(readPoint(drawn[drawn.length - 1]));
+    for (const raw of drawn) {
       const point = readPoint(raw);
       if (previous) {
         // Half a cell at a time, so no cell along the way is stepped over.
@@ -248,9 +251,12 @@ async function readZone(csv, log) {
     bands.set(band, sorted);
     cells += sorted.length;
   }
-  log(`  byzonen: ${lines} strækninger, ${cells} celler`);
+  const stops = [];
+  for (const point of meeting.values()) if (point.times === 1) stops.push(point);
+  meeting.clear();
+  log(`  byzonen: ${lines} strækninger, ${cells} celler, ${stops.length} steder den holder op`);
 
-  return (lat, lon) => {
+  const inZone = (lat, lon) => {
     const band = Math.round(lat / LAT_STEP);
     const column = Math.round(lon / LON_STEP);
     for (let i = -1; i <= 1; i++) {
@@ -260,6 +266,46 @@ async function readZone(csv, log) {
     }
     return false;
   };
+
+  return { inZone, terminus: nearestStop(stops) };
+}
+
+/*
+ * Moves a boundary onto the point where the built-up area stops, when one is close enough.
+ *
+ * The stops go in a grid of about two hundred metres so a lookup weighs a handful against the point
+ * rather than four hundred thousand.
+ */
+function nearestStop(stops) {
+  const cell = 0.002;
+  const grid = new Map();
+  for (const stop of stops) {
+    const key = `${Math.floor(stop.lat / cell)}/${Math.floor(stop.lon / cell)}`;
+    let list = grid.get(key);
+    if (!list) grid.set(key, list = []);
+    list.push(stop);
+  }
+  return (point) => {
+    const lat = Math.floor(point.lat / cell);
+    const lon = Math.floor(point.lon / cell);
+    let best = point;
+    let bestAway = SNAP_METERS;
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        for (const stop of grid.get(`${lat + i}/${lon + j}`) ?? []) {
+          const away = metresBetween(point, stop);
+          if (away < bestAway) { bestAway = away; best = stop; }
+        }
+      }
+    }
+    return best;
+  };
+}
+
+function metresBetween(a, b) {
+  const toRad = Math.PI / 180;
+  const lat = ((a.lat + b.lat) / 2) * toRad;
+  return Math.hypot((b.lon - a.lon) * toRad * Math.cos(lat), (b.lat - a.lat) * toRad) * 6371000;
 }
 
 function holds(sorted, value) {
