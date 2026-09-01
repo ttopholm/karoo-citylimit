@@ -526,10 +526,34 @@ for a sprint.
 That is after moving each boundary onto the point where the linework itself stops, which took the
 systematic part out: the grid answers "within eleven to sixteen metres of an urban road", so the
 point it found always sat about twenty metres too far out. 34,210 of 42,938 moved, by twenty metres
-on average, and the near band improved by five points. What is left is not systematic — the mapped
-signs scatter about seventy metres either side of the decided boundary — so no amount of arithmetic
-on this dataset closes it. It would take a source that records where the signs actually stand. Norway is a different exception: its points are real signs with surveyed positions,
-they are just the white place-name signs rather than a town-entry sign, which Norway no longer has.
+on average, and the near band improved by five points.
+
+**The assumption underneath is sound, and worth stating with its evidence.** A sign is supposed to
+stand where the built-up area begins, and Sweden's mapped signs do: held against the 48,400 places
+where a stretch of urban road is cut mid-link — the boundary as NVDB states it, with no grid and no
+guessing — the median mapped sign is 31 m away and 61% are within 50 m. A point drawn at random from
+the same urban road network is 255 m from one, and 9% are within 50 m. So the signs cluster on the
+boundary far beyond chance. Individually: Mariestad, Torbjörntorp, Floby, Åsenhöga and Ljungbyhed
+all sit 29-30 m from theirs.
+
+**And that is also the ceiling.** The pack reaches 60% within 50 m; the raw boundary points reach
+61%. There is less than a point between the implementation and the best this data can do, so the
+40% that misses is not arithmetic left undone — it is the real scatter in where a sign was put up
+relative to where the municipality drew the line. Closing it needs a source that records the signs
+themselves, and Sweden has none: NVDB's open API offers twelve datasets and none of them is signs,
+its catalogue of some forty feature types has no sign positions, and Swedish road signs sit with the
+municipalities rather than with Trafikverket. Mapillary detects signs from street imagery, but its
+grant covers deriving metadata *for contributing to OpenStreetMap*, not republishing a pack. Which
+leaves the map itself: 492 Swedish town signs are mapped today, and every one that gets added is a
+point this pack could take at its word.
+
+(Six mapped signs sit exactly 0 m from a boundary point. That is too exact to be independent —
+parts of Sweden's OSM road network were imported from NVDB, so a sign node that is a vertex of such
+a way shares its coordinate by descent rather than by agreement. They are not counted as
+confirmation above.)
+
+**Norway is a different exception.** Its points are real signs with surveyed positions — they are
+just the white place-name signs rather than a town-entry sign, which Norway no longer has.
 
 **A sign with no mapped town is dropped.** Without a town there is no name to announce and no way to
 tell entry from exit, so it is left out rather than guessed at. That is why the 44 Danish signs
