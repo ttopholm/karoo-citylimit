@@ -493,11 +493,43 @@ config in `app/build.gradle.kts` if you need a different one.
 
 ## Limitations
 
-* Alerts depend on how well town boundaries are mapped in OpenStreetMap. A sampling of one ~11 × 13
-  km area per country found signs in DK, DE, NL, AT, IT, BE, CZ, PL, ES, FI, UK and US — around 300
-  signs, all of which resolved a direction — but none at all in the sampled areas of SE, NO, FR and
-  CH, where nobody has mapped the boundaries. Check your own area on the verification map before
-  relying on it.
-* `direction=forward/backward` on a sign node is relative to the way it sits on, which needs road
-  geometry that would blow past the size limit for in-ride requests. The town-centre bearing is
-  used instead — it agrees with the tagging in the areas this has been checked against.
+**Outside the eight countries with a pack, coverage is whatever OpenStreetMap has.** Riding an
+unbuilt country falls back to fetching cells from Overpass as you go, and how much is mapped varies
+enormously — Germany has 130,000 signs and Britain 967. Check your own area on the verification map
+before relying on it.
+
+**A pack and a live-fetched cell do not behave the same.** A pack carries only signs whose direction
+into town is known; the live path keeps the undecided ones too, and *Also alert when direction is
+unknown* then fires them in both directions. So the same road can behave differently depending on
+whether you downloaded the country. This is a bug, not a design.
+
+**Sweden's signs are not signs.** They are the points where a road crosses the built-up area the
+municipality decided on, which is where the sign is *supposed* to stand. Held against the 344 mapped
+signs that do sit at a built-up area, a boundary lands within 100 m of 73% of them and within 200 m
+of 82%. Norway's are the plain white place-name signs, which carry no speed limit and are not
+town-entry signs in the legal sense — they are what a rider actually sees on arriving.
+
+**A sign with no mapped town is dropped.** Without a town there is no name to announce and no way to
+tell entry from exit, so it is left out rather than guessed at. That is why the 44 Danish signs
+reading *Storkøbenhavn* are absent: no `place` in OpenStreetMap carries that name.
+
+**All eight packs do not fit at once.** The sign cache holds 20,000 cells and the eight countries
+are 28,653 between them, so installing everything pushes the oldest cells off the end without saying
+so. Two or three countries fit comfortably.
+
+**`direction=forward/backward` on a sign node is not read.** It is relative to the way the node sits
+on, which needs road geometry — free when a whole country is read from a dump, far past the size
+limit for a request from the saddle. Packs settle the direction from the road and the speed zone
+instead; live-fetched cells take the bearing towards the town centre.
+
+## Licence
+
+The code is [MIT](LICENSE). The data is not the author's to license:
+
+* Sign data from OpenStreetMap is © OpenStreetMap contributors, under the
+  [Open Database License](https://www.openstreetmap.org/copyright).
+* The Norwegian pack contains data under the [Norwegian Licence for Public
+  Data](https://www.nvdb.no/rammer-regelverk/vilkar-og-ansvar/vilkar-for-bruk-av-data/) from Statens
+  vegvesen, which asks to be named; the pack carries that line and the settings screen shows it.
+* The Swedish pack is built from *Tättbebyggt område* from Trafikverket's NVDB, which is
+  [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
