@@ -1,19 +1,27 @@
 # karoo-citylimit
 
-A [Hammerhead Karoo](https://www.hammerhead.io/) extension that alerts you when you are about to
-ride **into** a town — and stays quiet when you ride out of one.
+**For the town sign sprint.** A [Hammerhead Karoo](https://www.hammerhead.io/) extension that tells
+you a town-entry sign is coming while there is still time to get out of the saddle — and says
+nothing on the way out, because that sign is not a sprint.
 
-> **På dansk:** Udvidelsen giver en besked på Karoo'en når du nærmer dig et byskilt ved indkørsel
-> til en by. Byskilte med streg over (ophør af tættere bebygget område) giver aldrig besked.
+On roads you know, you know where the sign is. On roads you do not, whoever does wins. That is the
+whole of it.
+
+> **På dansk:** Byskiltespurt. Udvidelsen siger til på Karoo'en et par hundrede meter før byskiltet,
+> så du ved hvornår spurten går. Skiltet med streg over — ophør af tættere bebygget område — giver
+> aldrig besked, for der er ingen spurt ud af byen.
 
 ![alert](docs/alert.svg)
 
 ## What it does
 
 * Watches your position while you ride and shows an in-ride alert (optionally with a beep) roughly
-  200 m before a town-entry sign.
+  200 m before a town-entry sign — far enough out to wind it up, close enough to be about this sign.
 * Only the **entry** side of a town boundary is announced. The crossed-out sign you pass on the way
   out is ignored.
+* Where a sign is placed matters as much as whether it is there. A sprint is decided at a line you
+  can see, so a pack built from mapped sign nodes is worth more than one built from a boundary that
+  is merely where a sign ought to stand. Which countries are which is set out below.
 * Works offline once the area has been downloaded, and can prefetch every town along a loaded route.
 
 ## How "entry only" is decided
@@ -174,16 +182,21 @@ broken feature rather than an absent one.
 
 What is built today:
 
-| | signs | source | licence |
-| --- | ---: | --- | --- |
-| Germany | 114,828 | OpenStreetMap | ODbL |
-| Sweden | 42,938 | Trafikverket NVDB, via Lastkajen | CC0 |
-| France | 41,472 | OpenStreetMap | ODbL |
-| Poland | 15,013 | OpenStreetMap | ODbL |
-| Netherlands | 14,917 | OpenStreetMap | ODbL |
-| Austria | 14,300 | OpenStreetMap | ODbL |
-| Denmark | 8,635 | OpenStreetMap | ODbL |
-| Norway | 6,852 | Statens vegvesen NVDB, open API | NLOD |
+| | signs | what a point is | source | licence |
+| --- | ---: | --- | --- | --- |
+| Germany | 114,828 | the mapped sign | OpenStreetMap | ODbL |
+| Sweden | 42,938 | **the decided boundary, not the sign** | Trafikverket NVDB, via Lastkajen | CC0 |
+| France | 41,472 | the mapped sign | OpenStreetMap | ODbL |
+| Poland | 15,013 | the mapped sign | OpenStreetMap | ODbL |
+| Netherlands | 14,917 | the mapped sign | OpenStreetMap | ODbL |
+| Austria | 14,300 | the mapped sign | OpenStreetMap | ODbL |
+| Denmark | 8,635 | the mapped sign | OpenStreetMap | ODbL |
+| Norway | 6,852 | a surveyed place-name sign | Statens vegvesen NVDB, open API | NLOD |
+
+The middle column is the one that decides whether a sprint is worth having. Six of the eight are the
+sign itself, put there by somebody who stood in front of it. Norway's are real signs too, just not
+town-entry ones. **Sweden's are not signs at all**, and the [limitations](#limitations) say what that
+costs.
 
 Italy and Czechia are the next map-backed candidates.
 
@@ -503,11 +516,13 @@ into town is known; the live path keeps the undecided ones too, and *Also alert 
 unknown* then fires them in both directions. So the same road can behave differently depending on
 whether you downloaded the country. This is a bug, not a design.
 
-**Sweden's signs are not signs.** They are the points where a road crosses the built-up area the
-municipality decided on, which is where the sign is *supposed* to stand. Held against the 344 mapped
-signs that do sit at a built-up area, a boundary lands within 100 m of 73% of them and within 200 m
-of 82%. Norway's are the plain white place-name signs, which carry no speed limit and are not
-town-entry signs in the legal sense — they are what a rider actually sees on arriving.
+**Sweden is not good enough to sprint to.** Its points are not signs: they are where a road crosses
+the built-up area the municipality decided on, which is where a sign is *supposed* to stand. Held
+against the 344 mapped signs that do sit at a built-up area, one lands within 50 m of 56% of them,
+within 100 m of 73% and within 200 m of 82%. On a 200 m warning an error of 150 m is the difference
+between winding up early and being at the line already. Fine for knowing a town is coming; not fine
+for a sprint. Norway is a different exception: its points are real signs with surveyed positions,
+they are just the white place-name signs rather than a town-entry sign, which Norway no longer has.
 
 **A sign with no mapped town is dropped.** Without a town there is no name to announce and no way to
 tell entry from exit, so it is left out rather than guessed at. That is why the 44 Danish signs
